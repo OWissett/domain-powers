@@ -15,7 +15,7 @@ A Claude Code plugin that extends [superpowers](https://github.com/obra/superpow
 ```bash
 claude plugin validate .
 uv run --python 3.13 --with pytest pytest tests/assess -q                     # TEST
-uvx ruff format --check scripts skills tests && uvx ruff check scripts skills tests   # LINT
+uvx ruff format --check scripts skills/assessing-domain-migration/tools tests && uvx ruff check scripts skills/assessing-domain-migration/tools tests   # LINT
 uvx --python 3.13 mypy --strict scripts/*.py skills/assessing-domain-migration/tools/core.py skills/assessing-domain-migration/tools/extractors/python.py   # TYPES
 # Vocabulary check of the plugin's own Markdown (copy the seed into a temporary docs/language.md):
 tmp=$(mktemp -d); mkdir -p "$tmp/docs"; cp skills/defining-documentation-language/references/language-seed.md "$tmp/docs/language.md"
