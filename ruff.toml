@@ -1,0 +1,6 @@
+# Lint/format settings for the plugin's own scripts (mirrors the quality-gates template).
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["E", "W", "F", "I", "B", "UP", "ANN", "PGH", "FBT", "PLR2004", "RET", "SIM", "RUF", "S"]

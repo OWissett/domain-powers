@@ -76,9 +76,7 @@ def seg(parts: list[str], i: int) -> str | None:
 
 
 ALLOW_RE = re.compile(r"domain-powers:\s*allow\s+\S")
-IGNORE_RE = re.compile(
-    r"#\s*(type:\s*ignore|pyright:\s*ignore|mypy:\s*ignore-errors)(\[[^\]]*\])?"
-)
+IGNORE_RE = re.compile(r"#\s*(type:\s*ignore|pyright:\s*ignore|mypy:\s*ignore-errors)(\[[^\]]*\])?")
 
 
 @dataclass(frozen=True)
@@ -209,9 +207,7 @@ def imported_modules(tree: ast.AST, loc: Location) -> list[tuple[int, str]]:
                 continue
             for alias in node.names:
                 # "from shop.billing import api" imports the submodule shop.billing.api
-                out.append(
-                    (node.lineno, f"{mod}.{alias.name}" if alias.name != "*" else mod)
-                )
+                out.append((node.lineno, f"{mod}.{alias.name}" if alias.name != "*" else mod))
     return out
 
 
@@ -241,9 +237,7 @@ def _domain_import_finding(
                 f"context's domain and the shared kernel ({shared}).",
             )
         return None
-    if cfg.root_package is None and any(
-        p in ("infrastructure", "application") for p in parts
-    ):
+    if cfg.root_package is None and any(p in ("infrastructure", "application") for p in parts):
         return Finding(
             path,
             line,
@@ -253,9 +247,7 @@ def _domain_import_finding(
     return None
 
 
-def check_imports(
-    path: Path, tree: ast.AST, loc: Location, cfg: Config
-) -> list[Finding]:
+def check_imports(path: Path, tree: ast.AST, loc: Location, cfg: Config) -> list[Finding]:
     findings: list[Finding] = []
     root = cfg.root_package
     for line, mod in imported_modules(tree, loc):
@@ -286,12 +278,7 @@ def check_imports(
                 )
             )
 
-        crosses = (
-            internal
-            and loc.context
-            and target in cfg.contexts
-            and target != loc.context
-        )
+        crosses = internal and loc.context and target in cfg.contexts and target != loc.context
         if crosses and target_layer != cfg.public_module:
             public = f"{root}.{target}.{cfg.public_module}"
             findings.append(
@@ -347,20 +334,13 @@ def check_types(path: Path, source: str, tree: ast.AST, loc: Location) -> list[F
                         "or parse into a precise type instead.",
                     )
                 )
-        elif (
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and not loc.is_test
-        ):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not loc.is_test:
             args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
             if node.args.vararg:
                 args.append(node.args.vararg)
             if node.args.kwarg:
                 args.append(node.args.kwarg)
-            missing = [
-                a.arg
-                for a in args
-                if a.annotation is None and a.arg not in ("self", "cls")
-            ]
+            missing = [a.arg for a in args if a.annotation is None and a.arg not in ("self", "cls")]
             if node.returns is None or missing:
                 what = []
                 if missing:
@@ -416,8 +396,7 @@ def check_types(path: Path, source: str, tree: ast.AST, loc: Location) -> list[F
                 f.path,
                 f.line,
                 f.code,
-                f.message
-                + " (allow-justifications are not accepted in the domain layer)",
+                f.message + " (allow-justifications are not accepted in the domain layer)",
             )
         kept.append(f)
 
@@ -432,9 +411,7 @@ def analyse(path: Path, source: str, cfg: Config) -> list[Finding]:
     except SyntaxError:
         return []  # mid-edit; the type checker / tests will report it
     loc = locate(path, cfg)
-    findings = check_types(path, source, tree, loc) + check_imports(
-        path, tree, loc, cfg
-    )
+    findings = check_types(path, source, tree, loc) + check_imports(path, tree, loc, cfg)
     # Import findings honour the same justification rule.
     lines = source.splitlines()
     out = []
@@ -462,9 +439,7 @@ TERM_HEADING_LEVEL = 3
 @dataclass(frozen=True)
 class Vocabulary:
     sources: tuple[Path, ...] = ()
-    avoid: tuple[
-        tuple[str, str, str, re.Pattern[str]], ...
-    ] = ()  # word, canonical, source, re
+    avoid: tuple[tuple[str, str, str, re.Pattern[str]], ...] = ()  # word, canonical, source, re
     allowed: tuple[str, ...] = ()
 
 
@@ -478,11 +453,7 @@ def _cells(row: str) -> list[str]:
 
 
 def _split_terms(cell: str) -> list[str]:
-    return [
-        t.strip().strip("`").strip()
-        for t in cell.split(",")
-        if t.strip().strip("`").strip()
-    ]
+    return [t.strip().strip("`").strip() for t in cell.split(",") if t.strip().strip("`").strip()]
 
 
 def parse_vocabulary(text: str) -> tuple[list[tuple[str, str]], list[str]]:
@@ -522,9 +493,7 @@ def parse_vocabulary(text: str) -> tuple[list[tuple[str, str]], list[str]]:
             continue
         if "term" in header and "avoid" in header and len(cells) == len(header):
             canonical = cells[header.index("term")].strip("`")
-            pairs.extend(
-                (w, canonical) for w in _split_terms(cells[header.index("avoid")])
-            )
+            pairs.extend((w, canonical) for w in _split_terms(cells[header.index("avoid")]))
     return pairs, allowed
 
 
@@ -695,9 +664,7 @@ def scan_main(targets: list[str]) -> int:
         except OSError:
             continue
         if f.suffix == ".md":
-            vocab = vocab_cache.setdefault(
-                f.parent, load_vocabulary(f.parent.resolve())
-            )
+            vocab = vocab_cache.setdefault(f.parent, load_vocabulary(f.parent.resolve()))
             total.extend(check_markdown(f, source, vocab))
         else:
             cfg = cfg_cache.setdefault(f.parent, load_config(f.parent.resolve()))

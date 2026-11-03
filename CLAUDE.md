@@ -7,14 +7,14 @@ A Claude Code plugin that extends [superpowers](https://github.com/obra/superpow
 - Follow superpowers' workflow: brainstorming → spec → writing-plans → execution → review → verification. Specs live in `docs/superpowers/specs/`, plans in `docs/superpowers/plans/`.
 - Use the plugin's own vocabulary (`skills/defining-documentation-language/references/language-seed.md`): phase, plan, task, step, batch, round, fix wave, gate, slice. Never `stage` for a phase.
 - Skill descriptions start with "Use when…" and never summarise the workflow (superpowers:writing-skills).
-- Scripts are Python 3.11+ standard library only, and must pass `ruff check` (rules from `skills/quality-gates/references/pyproject-template.toml`) and `mypy --strict`.
+- Scripts are Python 3.11+ standard library only, and must pass `ruff format --check`, `ruff check` (config in `ruff.toml`) and `mypy --strict`.
 - The plugin's `docs/` and `examples/` are not shipped in the `.plugin` archive.
 
 ## Verify
 
 ```bash
 claude plugin validate .
-mypy --strict scripts/*.py
+ruff format --check scripts && ruff check scripts && mypy --strict scripts/*.py
 # Vocabulary check of the plugin's own Markdown (copy the seed into a temporary docs/language.md):
 tmp=$(mktemp -d); mkdir -p "$tmp/docs"; cp skills/defining-documentation-language/references/language-seed.md "$tmp/docs/language.md"
 cp -r skills agents README.md "$tmp/"; python3 scripts/domain_guard.py --scan "$tmp"
@@ -27,7 +27,7 @@ cd examples/sample-shop && pip install -e . ruff mypy import-linter hypothesis p
 ## Packaging
 
 ```bash
-zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "*.DS_Store" ".gitignore" "CLAUDE.md"
+zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "*.DS_Store" ".gitignore" "CLAUDE.md" "ruff.toml"
 ```
 
 ## Current state (2026-11-03)
