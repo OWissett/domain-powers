@@ -14,7 +14,8 @@ Domain-driven design, strong boundaries and type-level guarantees for Python cod
 | `test-driven-development` | **type-driven-design**: value objects, NewType IDs, typestate unions, result unions, `assert_never`, parse-don't-validate |
 | | **modeling-aggregates**: small aggregates, root-only mutation, domain events, ID references, idempotent policies |
 | | **testing-invariants**: Hypothesis properties and stateful machines per glossary invariant; fakes over mocks; port contract suites |
-| `verification-before-completion` | **quality-gates**: seven gates (ruff format, ruff lint, mypy strict, import-linter, escape scan, pytest+Hypothesis, documentation language) and brownfield ratchets |
+| `verification-before-completion` | **quality-gates**: eight gates (ruff format, ruff lint, mypy strict, import-linter, escape scan, pytest+Hypothesis, documentation language, migration) and brownfield ratchets |
+| | **assessing-domain-migration**: measure an existing codebase, agree contexts and a target, recommend migrate or not, and ratchet progress slice by slice |
 | `requesting-code-review` | **domain-reviewer** agent: language drift, boundary leaks, anemic models, primitive obsession, weakened gates |
 
 ## How it's triggered
@@ -65,6 +66,26 @@ Without this table the guard still checks type escapes and treats any `*/domain/
 Expected layout per context: `<root>/<context>/{api.py, domain/, application/, infrastructure/}`.
 
 For the vocabulary check, copy `skills/defining-documentation-language/references/language-seed.md` to `docs/language.md` (the skill does this on first use) and edit it to match how your team talks.
+
+## Assessing a migration
+
+The `assessing-domain-migration` skill decides whether an existing codebase should move to a domain-driven layout, and keeps the move honest. Tools in `skills/assessing-domain-migration/tools/` measure the code: an extractor (Python today) writes a language-neutral model of units and dependencies, and `core.py analyse` scores it: layout style, cycles, hubs, instability, scattered terms, candidate clusters, escapes, framework references, and, given a `target.toml`, the distance from the agreed contexts. Anything a language cannot supply reads *n/a*, never zero.
+
+The skill runs seven phases:
+
+1. **Measure**: run the extractor and `analyse`.
+2. **Read hotspots**: read only what the numbers point at.
+3. **Language and contexts**: glossary and context map (checkpoint: your human partner agrees the contexts).
+4. **Target**: write `target.toml` and re-run `analyse`.
+5. **Decide**: migrate, migrate the core context only, or don't (checkpoint: your human partner decides).
+6. **Plan**: split the work into slices, each its own plan.
+7. **Baseline**: commit the assessment, `baseline.json` and `target.toml`.
+
+From then on gate 8 (`migration`) runs `core.py compare` against `docs/domain/migration/baseline.json` and fails when any ratchet metric grew. The `domain-reviewer` agent has a migration mode that reports the same table and checks a change stays inside its slice.
+
+## Language packs
+
+A plugin-wide convention, used first by the assessment tools: an agnostic core plus a variant per language. The agnostic part (process, rules, data model, analysis) never names a language's syntax or tools. Each variant lives under a `languages/` (documents) or `extractors/` (tools) directory, named by language. A variant declares what it supports, and the core treats anything undeclared as not applicable. Python is the first variant shipped.
 
 ## Tested against
 

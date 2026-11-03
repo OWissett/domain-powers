@@ -25,6 +25,23 @@ gate types      mypy
 gate boundaries lint-imports
 gate escapes    python3 "$GUARD" --scan "$SRC"
 HYPOTHESIS_PROFILE="${HYPOTHESIS_PROFILE:-ci}" gate tests pytest -q
+if [ -f docs/language.md ]; then
+  gate language python3 "$GUARD" --scan docs $( [ -f README.md ] && echo README.md )
+fi
+
+ASSESS="${ASSESS:-scripts/assess}"
+MIGRATION="docs/domain/migration"
+migration_check() {
+  local out target=()
+  out="$(mktemp -d)"
+  [ -f "$MIGRATION/target.toml" ] && target=(--target "$MIGRATION/target.toml")
+  python3 "$ASSESS/extractors/python.py" "$SRC" --out "$out/model.json" \
+    && python3 "$ASSESS/core.py" analyse "$out/model.json" --out-dir "$out" ${target[@]+"${target[@]}"} \
+    && python3 "$ASSESS/core.py" compare --baseline "$MIGRATION/baseline.json" --current "$out/assessment.json"
+}
+if [ -f "$MIGRATION/baseline.json" ]; then
+  gate migration migration_check
+fi
 
 echo
 echo "Gates: ${summary[*]}"

@@ -35,10 +35,9 @@ zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "tests/*" 
 ## Current state (2026-11-03)
 
 - `main`: v0.2.0. Eight skills, the `domain-reviewer` agent, a SessionStart routing hook, the edit guard (Python and Markdown), and the superpowers pairing hook.
-- `feature/migration-assessment`: the approved spec `docs/superpowers/specs/2026-11-03-migration-assessment-design.md`. **Next: invoke superpowers:writing-plans on it**, then have the human partner review the plan and choose subagent-driven or native execution.
+- `feature/migration-assessment`: v0.3.0, ready for review. Nine skills (adds `assessing-domain-migration`), the assessment tools (Python extractor and `core.py analyse`/`compare`), gate 8 (`migration`) and the reviewer's migration mode. Spec: `docs/superpowers/specs/2026-11-03-migration-assessment-design.md`.
 
 ## Queued work (in order)
 
-1. **Migration assessment skill**: implement the spec above (v0.3.0).
-2. **Language-pack restructure**: apply the convention from spec section 3 to everything else. Skills become agnostic with `languages/python.md` variants, the guard becomes a core plus per-language checkers, gates are defined once with a command map per language, and the reviewer checklist is split the same way. The assessment extractor's duplicated escape detection merges with the guard here. This needs its own brainstorming and spec.
-3. **Rust language pack**: extractor, guard checker, gates (`cargo fmt`, `clippy -D warnings`, `cargo deny`, `proptest`) and reference files. C may follow.
+1. **Language-pack restructure**: apply the convention from spec section 3 to everything else. Skills become agnostic with `languages/python.md` variants, the guard becomes a core plus per-language checkers, gates are defined once with a command map per language, and the reviewer checklist is split the same way. The assessment extractor's duplicated escape detection merges with the guard here. This needs its own brainstorming and spec.
+2. **Rust language pack: extractor, guard checker, gates (`cargo fmt`, `clippy -D warnings`, `cargo deny`, `proptest`) and reference files. C may follow.

@@ -18,6 +18,7 @@ The domain-powers edit guard reads the **Avoid** column and flags those words in
 | batch | Several small, same-shape tasks sent to one subagent together and reviewed as one diff | A wave or a round | task group, wave |
 | round | One review → fix iteration on a single task or batch, counted from 1 | The final fix wave | fix cycle, review cycle, review pass, iteration |
 | fix wave | The single set of fixes after the final whole-branch review; there is only ever one | A round | fix pass, final pass |
+| slice | One unit of migration work that moves one context, or part of one, behind its boundary and ends with every gate green | A plan (each slice gets its own plan) | migration step, increment, migration phase |
 | checkpoint | A point where work stops for your human partner's decision | A gate | milestone, sign-off point |
 
 ### Quality

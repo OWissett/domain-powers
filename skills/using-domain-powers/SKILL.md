@@ -24,6 +24,7 @@ Domain-powers extends superpowers. It never replaces a superpowers skill. Superp
 | `superpowers:test-driven-development` choosing which tests to write | `domain-powers:testing-invariants` |
 | `superpowers:verification-before-completion` | `domain-powers:quality-gates` |
 | `superpowers:requesting-code-review` | also dispatch the `domain-powers:domain-reviewer` agent |
+| Assessing a codebase for a DDD migration, or reviewing a migration change | `domain-powers:assessing-domain-migration` |
 | A new or unguarded Python project | `domain-powers:quality-gates` (setup section) before writing domain code |
 
 A hook also reminds you of the pairing each time a superpowers skill loads. Follow it.
