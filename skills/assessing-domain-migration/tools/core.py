@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 import subprocess
 import tomllib
 from collections.abc import Iterable, Sequence
@@ -646,3 +647,138 @@ def distance(model: Model, target: Target, na: NotApplicable) -> Distance | None
         work_list=work,
         empty_contexts=sorted(set(by_name) - set(assigned.values())),
     )
+
+
+# --- Signals ----------------------------------------------------------------------------------
+
+STOP_TERMS: frozenset[str] = frozenset(
+    {
+        "manager",
+        "service",
+        "helper",
+        "util",
+        "base",
+        "mixin",
+        "model",
+        "view",
+        "serializer",
+        "schema",
+        "dto",
+        "data",
+        "info",
+        "handler",
+        "controller",
+        "repository",
+        "factory",
+        "impl",
+        "abstract",
+        "config",
+        "test",
+    }
+)
+MIN_TERM_LENGTH = 3
+SCATTER_GROUPS = 3
+_WORD = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+")
+
+
+def split_terms(name: str) -> list[str]:
+    terms: dict[str, None] = {}
+    for part in name.split("_"):
+        for word in _WORD.findall(part):
+            term = word.lower()
+            if len(term) >= MIN_TERM_LENGTH and term not in STOP_TERMS:
+                terms.setdefault(term)
+    return list(terms)
+
+
+def unit_terms(unit: Unit) -> frozenset[str]:
+    return frozenset(t for decl in unit.types for t in split_terms(decl.name))
+
+
+@dataclass(frozen=True)
+class ScatteredTerm:
+    term: str
+    groups: list[str]
+
+
+@dataclass(frozen=True)
+class TermSpread:
+    distinct: int
+    scattered: list[ScatteredTerm]
+
+
+def term_spread(model: Model, na: NotApplicable) -> TermSpread | None:
+    if not require(model, na, "terms", "types"):
+        return None
+    groups: dict[str, set[str]] = {}
+    for u in model.units:
+        for term in unit_terms(u):
+            groups.setdefault(term, set()).add(u.group)
+    scattered = [
+        ScatteredTerm(t, sorted(g)) for t, g in sorted(groups.items()) if len(g) >= SCATTER_GROUPS
+    ]
+    return TermSpread(len(groups), scattered)
+
+
+@dataclass(frozen=True)
+class Richness:
+    data_only_share: float | None
+    model_types: int
+    service_types: int
+
+
+def model_richness(model: Model, na: NotApplicable) -> Richness | None:
+    if not require(model, na, "richness", "types", "data_only", "layer_hints"):
+        return None
+    model_decls = [d for u in model.units if u.layer_hint in MODEL_LIKE for d in u.types]
+    service_types = sum(len(u.types) for u in model.units if u.layer_hint in SERVICE_LIKE)
+    share = (
+        sum(1 for d in model_decls if d.data_only is True) / len(model_decls)
+        if model_decls
+        else None
+    )
+    return Richness(share, len(model_decls), service_types)
+
+
+@dataclass(frozen=True)
+class Entanglement:
+    share: float | None
+    units: list[str]
+    refs: int
+
+
+def framework_entanglement(
+    model: Model, target: Target | None, na: NotApplicable
+) -> Entanglement | None:
+    if target is None:
+        if not require(model, na, "framework", "framework_refs", "layer_hints"):
+            return None
+        scope = [u for u in model.units if u.layer_hint in MODEL_LIKE]
+    else:
+        if not require(model, na, "framework", "framework_refs"):
+            return None
+        assigned = assign_units(model, target)
+        generic = {c.name for c in target.contexts if c.classification == "generic"}
+        scope = [u for u in model.units if u.id in assigned and assigned[u.id] not in generic]
+    entangled = sorted(u.id for u in scope if u.framework_refs)
+    refs = sum(len(u.framework_refs) for u in scope)
+    return Entanglement(len(entangled) / len(scope) if scope else None, entangled, refs)
+
+
+@dataclass(frozen=True)
+class Escapes:
+    total: int
+    per_kloc: float | None
+    by_kind: dict[str, int]
+
+
+def escape_totals(model: Model, na: NotApplicable) -> Escapes | None:
+    if not require(model, na, "escapes", "escapes"):
+        return None
+    by_kind: dict[str, int] = {}
+    for u in model.units:
+        for kind, count in u.escapes.items():
+            by_kind[kind] = by_kind.get(kind, 0) + count
+    total = sum(by_kind.values())
+    loc = sum(u.loc for u in model.units)
+    return Escapes(total, total * 1000 / loc if loc else None, dict(sorted(by_kind.items())))
