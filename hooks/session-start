@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# SessionStart hook for domain-powers: injects the using-domain-powers routing skill.
+set -euo pipefail
+
+case "$0" in
+  */*) SCRIPT_DIR="$(cd "${0%/*}" && pwd)" ;;
+  *) SCRIPT_DIR="$(pwd)" ;;
+esac
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+skill_md="${PLUGIN_ROOT}/skills/using-domain-powers/SKILL.md"
+if [ -r "$skill_md" ]; then
+  content="$(<"$skill_md")"
+else
+  content="Error reading using-domain-powers skill"
+fi
+
+escape_for_json() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+escaped="$(escape_for_json "$content")"
+ctx="<IMPORTANT>\nYou have domain-powers, which extends superpowers.\n\n**Below is your 'domain-powers:using-domain-powers' skill. Load other domain-powers skills with the Skill tool:**\n\n${escaped}\n</IMPORTANT>"
+
+printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$ctx"
