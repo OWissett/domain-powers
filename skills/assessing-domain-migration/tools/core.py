@@ -1071,6 +1071,8 @@ def _ratchet(
 
 def assess(model: Model, target: Target | None, churn_cwd: Path | None) -> Assessment:
     na: NotApplicable = {}
+    if target is not None:
+        assign_units(model, target)  # rejects overlapping patterns whatever the capabilities
     unit_cycle_list = unit_cycles(model, na)
     group_cycle_list = group_cycles(model, na)
     if churn_cwd is None:

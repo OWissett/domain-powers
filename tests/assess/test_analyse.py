@@ -215,3 +215,18 @@ def test_markdown_reports_no_separable_clusters() -> None:
     a = core.assess(make_model([unit("a.x", types=[("Order", False)])]), None, None)
     assert a.clusters is not None and not a.clusters.separable
     assert "No separable clusters found." in core.render_markdown(a)
+
+
+def test_analyse_overlap_exits_2_without_edges_or_framework_refs(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    model = write(tmp_path, "model.json", raw_model(capabilities=["types"]))
+    target = tmp_path / "target.toml"
+    target.write_text(
+        '[contexts.a]\nclassification = "core"\nunits = ["shop.models.*"]\n'
+        '[contexts.b]\nclassification = "core"\nunits = ["shop.models.order"]\n',
+        encoding="utf-8",
+    )
+    argv = ["analyse", str(model), "--out-dir", str(tmp_path / "o"), "--target", str(target)]
+    assert core.main(argv) == 2
+    assert "shop.models.order" in capsys.readouterr().err
