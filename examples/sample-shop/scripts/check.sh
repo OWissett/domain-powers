@@ -32,12 +32,21 @@ fi
 ASSESS="${ASSESS:-scripts/assess}"
 MIGRATION="docs/domain/migration"
 migration_check() {
-  local out target=()
+  local out line status target=() extra=()
   out="$(mktemp -d)"
   [ -f "$MIGRATION/target.toml" ] && target=(--target "$MIGRATION/target.toml")
-  python3 "$ASSESS/extractors/python.py" "$SRC" --out "$out/model.json" \
+  if [ -f "$MIGRATION/extractor-args" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] && extra+=("$line")
+    done < "$MIGRATION/extractor-args"
+  fi
+  status=0
+  python3 "$ASSESS/extractors/python.py" "$SRC" ${extra[@]+"${extra[@]}"} --out "$out/model.json" \
     && python3 "$ASSESS/core.py" analyse "$out/model.json" --out-dir "$out" ${target[@]+"${target[@]}"} \
-    && python3 "$ASSESS/core.py" compare --baseline "$MIGRATION/baseline.json" --current "$out/assessment.json"
+    && python3 "$ASSESS/core.py" compare --baseline "$MIGRATION/baseline.json" --current "$out/assessment.json" \
+    || status=$?
+  rm -rf "$out"
+  return "$status"
 }
 if [ -f "$MIGRATION/baseline.json" ]; then
   gate migration migration_check

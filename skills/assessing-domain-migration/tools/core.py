@@ -1,8 +1,8 @@
 """Language-agnostic migration assessment core.
 
-Commands (added in later tasks):
-    core.py analyse model.json [--target target.toml] [--churn]
-    core.py compare assessment.json baseline.json
+Commands:
+    core.py analyse MODEL --out-dir DIR [--target FILE] [--churn]
+    core.py compare --baseline FILE --current FILE
 
 The core never parses source code. Extractors write a neutral model
 (``domain-powers.assess.model/1``) and the core only reads that JSON.

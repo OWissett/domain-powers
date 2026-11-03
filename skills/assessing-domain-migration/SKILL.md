@@ -27,7 +27,7 @@ Seven phases, two checkpoints. Do not start a phase before the previous one has 
 | 1. Measure | Detect languages from file types and manifests; run each matching extractor; run `analyse` (with `--churn` in git). With no extractor for a language, read the code and state the reduced capabilities at the top of the report. | `model.json`, `assessment.json` and `assessment.md` |
 | 2. Read hotspots | Read only what the numbers point at: hubs, cycle members, top scattered-term units, model-like units with framework refs. Each finding cites `file:line`. | Findings in the report |
 | 3. Language and contexts | Run `domain-powers:modeling-the-domain`, starting from the candidate clusters and scattered terms. Write the glossary (with code aliases and avoided words) and the context map with classifications. **Checkpoint: the human partner agrees the contexts.** | `docs/domain/glossary.md`, `context-map.md` |
-| 4. Target | Write `target.toml`; re-run `analyse --target`. | Distance and work list |
+| 4. Target | Write `target.toml`, with patterns covering each context's current and destination locations; re-run `analyse --target`. | Distance and work list |
 | 5. Decide | Weigh the scorecard and the cost (work-list size, units to move) against the benefit (core-context centrality and churn). Recommend *migrate*, *migrate the core context only* or *don't migrate*, with reasons. **Checkpoint: the human partner decides.** | Recommendation section |
 | 6. Plan | If migrating, split the work into slices and hand each to `superpowers:writing-plans` as its own plan. | Slice list in the report |
 | 7. Baseline | Commit the dated assessment, `baseline.json` and `target.toml`; enable the `migration` gate through `domain-powers:quality-gates`. | Committed baseline |
@@ -51,11 +51,12 @@ Details are in `references/migration-playbook.md`.
 Run everything from the project root. `<skill>` is this skill's base directory.
 
 1. **Check for generated or vendored code first** (protobuf output, migrations, `vendor/`, bundled third-party sources). Pass each location as `--exclude GLOB`; otherwise it distorts every metric.
-2. **Pick the extractor** from the Shipped extractors table in `<skill>/tools/EXTRACTORS.md`. Run the extractor's command from that table, adding `--exclude` globs and `--out model.json`.
+2. **Pick the extractor** from the Shipped extractors table in `<skill>/tools/EXTRACTORS.md`. Run the extractor's command from that table, adding `--exclude` globs, and write the model to a scratch directory (`out=$(mktemp -d)`; `--out "$out/model.json"`). Never commit the model.
+   Record every option beyond the source root (each `--exclude` and its glob, `--include-tests`, `--package`) in `docs/domain/migration/extractor-args`, one argument per line, blank lines ignored, for example `--exclude` then `shop/generated/*` on the next line. The `migration` gate and the reviewer read that file, so later runs measure the same code the baseline did. Commit it in phase 7 with the baseline.
 3. **Analyse:**
 
    ```bash
-   python3 <skill>/tools/core.py analyse model.json --out-dir docs/domain/migration [--target docs/domain/migration/target.toml] [--churn]
+   python3 <skill>/tools/core.py analyse "$out/model.json" --out-dir docs/domain/migration [--target docs/domain/migration/target.toml] [--churn]
    ```
 
    This writes `assessment.json` and `assessment.md` in the output directory. The generated report has four human sections (Recommendation, Hotspot findings, Contexts, Slices), each holding a placeholder; fill them as `references/report-template.md` describes.
@@ -65,7 +66,32 @@ Run everything from the project root. `<skill>` is this skill's base directory.
    python3 <skill>/tools/core.py compare --baseline docs/domain/migration/baseline.json --current <dir>/assessment.json
    ```
 
-5. **Phase 7:** rename `assessment.md` to `assessment-YYYY-MM-DD.md` and `assessment.json` to `baseline.json`, both in `docs/domain/migration/`, and commit them with `target.toml`.
+5. **Phase 7:** rename `assessment.md` to `assessment-YYYY-MM-DD.md` and `assessment.json` to `baseline.json`, both in `docs/domain/migration/`, and commit them with `target.toml` and `extractor-args`.
+
+### Target file
+
+`target.toml` says where each unit should end up:
+
+```toml
+[contexts.ordering]
+classification = "core"            # core | supporting | generic
+units = ["shop.models.order*", "shop.services.checkout*"]
+public = ["shop.services.checkout"]
+
+[contexts.billing]
+classification = "supporting"
+units = ["shop.services.billing*", "shop.models.invoice*"]
+public = ["shop.services.billing.api"]
+```
+
+- One `[contexts.<name>]` table per context.
+- `classification` is `core`, `supporting` or `generic`.
+- `units` is a non-empty list of `fnmatch` globs on unit ids.
+- `public` is an optional list of globs on unit ids: the units other contexts may use.
+- A unit matching two contexts is an error: `analyse` exits 2 and lists the overlaps.
+- A context whose patterns match no unit is listed as an empty context in the report; usually that is a typo.
+
+Cover each context's current locations and its destination locations in the patterns, so distance falls as units move and the work list stays honest. Changing `target.toml` counts as a baseline refresh: `compare` prints "targets differ" and checks only the target-independent metrics until the baseline is refreshed. Change it only at a slice end, and have the change reviewed.
 
 The scorecard rubric is in `references/scorecard.md`; recognising the starting layout is in `references/layout-patterns.md`.
 
@@ -74,7 +100,7 @@ The scorecard rubric is in `references/scorecard.md`; recognising the starting l
 | Situation | What to do |
 |---|---|
 | No extractor for a detected language | Read the code yourself for the same facts (units, dependencies, type names). List the missing capabilities at the top of the report; the scorecard dimensions that need them read *n/a*. Offer to add an extractor from the contract in `tools/EXTRACTORS.md`. |
-| Files skipped by the extractor | The report shows the count. Open the list: if skipped files are central (a hub, a model package), fix the cause or exclude them knowingly, and say which in the report. |
+| Files skipped by the extractor | The report shows the count; the paths are in `model.json` under `skipped`. Read them: if skipped files are central (a hub, a model package), fix the cause or exclude them knowingly, and say which in the report. |
 | "No separable clusters found" | A finding in itself: the code has no seams to cut along. Take contexts from the glossary and the human partner's language instead, and expect a larger work list. |
 | Not a git repo | Churn reads *n/a*; decide on the other evidence. |
 

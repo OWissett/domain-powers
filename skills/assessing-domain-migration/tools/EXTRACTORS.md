@@ -11,6 +11,7 @@ An extractor reads source code and writes a neutral model as JSON. `core.py` nev
 - Exit 0 on success, even with skipped files. Exit 2 on usage errors or an unreadable root.
 - Tests are excluded by default: units with `layer_hint: tests` are dropped unless `--include-tests` is given.
 - `--exclude` takes globs, repeatable, for generated or vendored code.
+- The core currently accepts only the six capability names listed in the schema below; an unknown one is a model error (exit 2).
 - Output is deterministic: units sorted by `id`, edges by `(from, to)`; the same code gives the same bytes.
 
 ## Model schema

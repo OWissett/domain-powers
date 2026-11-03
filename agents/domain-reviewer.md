@@ -45,8 +45,10 @@ Use this mode when the change is a slice of a domain-driven migration (`docs/dom
 
 **Procedure:** produce a current assessment, run `compare`, and paste its table under Tool evidence as `- migration: <table>`. In a project the tools are vendored as `scripts/assess/`; otherwise use the plugin's `skills/assessing-domain-migration/tools/`.
 
+Pass the extractor the arguments recorded in `docs/domain/migration/extractor-args` (one argument per line) between the source root and `--out`, so the run measures what the baseline measured.
+
 ```bash
-python3 <plugin>/skills/assessing-domain-migration/tools/extractors/python.py src --out <dir>/model.json
+python3 <plugin>/skills/assessing-domain-migration/tools/extractors/python.py src [<extractor-args>] --out <dir>/model.json
 python3 <plugin>/skills/assessing-domain-migration/tools/core.py analyse <dir>/model.json --out-dir <dir> [--target docs/domain/migration/target.toml]
 python3 <plugin>/skills/assessing-domain-migration/tools/core.py compare --baseline docs/domain/migration/baseline.json --current <dir>/assessment.json
 ```
@@ -56,8 +58,9 @@ python3 <plugin>/skills/assessing-domain-migration/tools/core.py compare --basel
 - Exception lists (`ignore_imports`, legacy overrides, allow comments) shrink and never grow.
 - No new re-export shims.
 - The baseline is refreshed only when a slice ends.
+- `target.toml` and `extractor-args` change only at a slice end.
 
-**Severities:** a ratchet increase is Critical; a new shim or a change outside the slice is Important.
+**Severities:** a ratchet increase is Critical; a new shim or a change outside the slice is Important; so is a `target.toml` change outside a slice end, or a compare report starting with "targets differ" outside a slice end.
 
 ## Checklist
 

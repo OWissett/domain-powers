@@ -395,6 +395,9 @@ def extract(
             skipped.append((path, "syntax error"))
             continue
         module = _module_id(rel)
+        if module in units:
+            skipped.append((path, "duplicate module id"))
+            continue
         units[module] = {
             "id": module,
             "path": path,

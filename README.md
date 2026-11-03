@@ -89,7 +89,7 @@ A plugin-wide convention, used first by the assessment tools: an agnostic core p
 
 ## Tested against
 
-A sample two-context project (ordering, billing) passing all seven gates with ruff 0.16, mypy 2.3, import-linter 2.x, Hypothesis and pytest. Injected violations were caught by both the hook and import-linter, and a drifting plan document produced `TERM` findings for `stage`, `chunk`, `sub-step`, `review pass`, `fix pass`, `wave` and a glossary synonym. The plugin's own docs pass its vocabulary check.
+A sample two-context project (ordering, billing) passing every gate that applies to it (the migration gate needs a baseline; a scratch run showed it passing, then failing on an added import cycle) with ruff 0.16, mypy 2.3, import-linter 2.x, Hypothesis and pytest. Injected violations were caught by both the hook and import-linter, and a drifting plan document produced `TERM` findings for `stage`, `chunk`, `sub-step`, `review pass`, `fix pass`, `wave` and a glossary synonym. The plugin's own docs pass its vocabulary check.
 
 ## License
 

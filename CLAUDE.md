@@ -29,7 +29,7 @@ cd examples/sample-shop && pip install -e . ruff mypy import-linter hypothesis p
 ## Packaging
 
 ```bash
-zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "tests/*" "*.DS_Store" ".gitignore" "CLAUDE.md" "ruff.toml"
+zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "tests/*" "*.DS_Store" ".gitignore" "CLAUDE.md" "ruff.toml" ".superpowers/*" ".mypy_cache/*" ".pytest_cache/*" ".ruff_cache/*" "*/__pycache__/*" "*.pyc"
 ```
 
 ## Current state (2026-11-03)
@@ -40,4 +40,4 @@ zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "tests/*" 
 ## Queued work (in order)
 
 1. **Language-pack restructure**: apply the convention from spec section 3 to everything else. Skills become agnostic with `languages/python.md` variants, the guard becomes a core plus per-language checkers, gates are defined once with a command map per language, and the reviewer checklist is split the same way. The assessment extractor's duplicated escape detection merges with the guard here. This needs its own brainstorming and spec.
-2. **Rust language pack: extractor, guard checker, gates (`cargo fmt`, `clippy -D warnings`, `cargo deny`, `proptest`) and reference files. C may follow.
+2. **Rust language pack**: extractor, guard checker, gates (`cargo fmt`, `clippy -D warnings`, `cargo deny`, `proptest`) and reference files. C may follow.

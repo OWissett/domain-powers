@@ -157,6 +157,22 @@ def test_syntax_error_is_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert sorted(units_by_id(model)) == ["shop.ok"]
 
 
+def test_duplicate_module_id_keeps_first_in_sorted_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_tree(
+        tmp_path / "src",
+        {"shop/models.py": "x = 1\n", "shop/models/__init__.py": "y = 2\nz = 3\n"},
+    )
+    monkeypatch.chdir(tmp_path)
+    model = pyx.extract(Path("src"))
+    units = units_by_id(model)
+    assert units["shop.models"]["path"] == "src/shop/models.py"
+    assert model["skipped"] == [
+        {"path": "src/shop/models/__init__.py", "reason": "duplicate module id"}
+    ]
+
+
 def test_non_utf8_is_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_tree(tmp_path / "src", {"shop/ok.py": "x = 1\n"})
     (tmp_path / "src" / "shop" / "bad.py").write_bytes(b"\xff\xfe x = 1")

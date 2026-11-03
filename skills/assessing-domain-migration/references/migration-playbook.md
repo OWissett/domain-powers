@@ -19,6 +19,10 @@ Fewest incoming cross-context edges first: a context nobody depends on can move 
 5. **Shrink to zero.** Repoint remaining callers at the `api` facade, delete the shims, empty the exception lists, and switch the rules from warn to strict.
 6. **Refresh the baseline.** Only now, with a new `assessment.json` that shows the work list smaller. A refresh that hides an increase is a weakened gate.
 
+## Target patterns
+
+The `units` patterns in `target.toml` must match each context's current locations and the locations its units will move to, so the distance table is meaningful before, during and after the move. Editing `target.toml` switches off the three target-dependent ratchet metrics until the baseline is refreshed (`compare` prints "targets differ"), so treat a change to it as a baseline refresh: make it only at a slice end, and have it reviewed.
+
 ## Warn-then-strict boundaries
 
 Strict rules on day one fail on every legacy import and get switched off. Warn mode with recorded exceptions keeps the rules alive while the code catches up. The exception list is the slice's progress bar: it must be non-increasing in every change, and empty when the slice ends. See `domain-powers:quality-gates` (brownfield section) for the language's exception lists and how to keep them shrinking.
