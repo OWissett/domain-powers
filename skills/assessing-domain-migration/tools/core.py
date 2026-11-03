@@ -10,8 +10,10 @@ The core never parses source code. Extractors write a neutral model
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import subprocess
+import tomllib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -479,3 +481,168 @@ def churn(model: Model, cwd: Path, na: NotApplicable) -> list[UnitChurn] | None:
         return None
     ranked = [UnitChurn(u.id, totals[u.path]) for u in model.units if totals.get(u.path, 0) > 0]
     return sorted(ranked, key=lambda c: (-c.lines, c.id))
+
+
+# --- Target -----------------------------------------------------------------------------------
+
+CLASSIFICATIONS: tuple[str, ...] = ("core", "supporting", "generic")
+
+
+class TargetError(Exception):
+    """The target file is unreadable, malformed or inconsistent with the model."""
+
+
+class OverlapError(TargetError):
+    def __init__(self, overlaps: dict[str, list[str]]) -> None:
+        self.overlaps = overlaps
+        lines = [f"{unit}: {', '.join(contexts)}" for unit, contexts in sorted(overlaps.items())]
+        super().__init__("units match several contexts:\n" + "\n".join(lines))
+
+
+@dataclass(frozen=True)
+class Context:
+    name: str
+    classification: str
+    units: tuple[str, ...]
+    public: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Target:
+    contexts: tuple[Context, ...]
+
+
+def _patterns(raw: object, name: str, field: str, *, required: bool) -> tuple[str, ...]:
+    if raw is None and not required:
+        return ()
+    if not isinstance(raw, list) or (required and not raw):
+        kind = "a non-empty list" if required else "a list"
+        raise TargetError(f"context {name!r}: {field} must be {kind} of strings")
+    items: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            raise TargetError(f"context {name!r}: {field} must be a list of strings")
+        items.append(item)
+    return tuple(items)
+
+
+def _context(name: str, raw: object) -> Context:
+    if not isinstance(raw, dict):
+        raise TargetError(f"context {name!r} must be a table")
+    classification = raw.get("classification")
+    if classification not in CLASSIFICATIONS:
+        raise TargetError(
+            f"context {name!r}: classification must be one of {', '.join(CLASSIFICATIONS)}"
+        )
+    return Context(
+        name,
+        str(classification),
+        _patterns(raw.get("units"), name, "units", required=True),
+        _patterns(raw.get("public"), name, "public", required=False),
+    )
+
+
+def parse_target(text: str) -> Target:
+    try:
+        raw: object = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise TargetError(f"target is not valid TOML: {exc}") from exc
+    contexts = raw.get("contexts") if isinstance(raw, dict) else None
+    if not isinstance(contexts, dict) or not contexts:
+        raise TargetError("target needs a [contexts.<name>] table")
+    return Target(tuple(_context(str(n), c) for n, c in sorted(contexts.items())))
+
+
+def load_target(path: Path) -> Target:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise TargetError(f"cannot read {path}: {exc}") from exc
+    return parse_target(text)
+
+
+def target_json(target: Target) -> dict[str, Json]:
+    contexts: dict[str, Json] = {}
+    for c in target.contexts:
+        contexts[c.name] = {
+            "classification": c.classification,
+            "units": list(c.units),
+            "public": list(c.public),
+        }
+    return {"contexts": contexts}
+
+
+def _matches(unit_id: str, patterns: Iterable[str]) -> bool:
+    return any(fnmatch.fnmatchcase(unit_id, p) for p in patterns)
+
+
+def assign_units(model: Model, target: Target) -> dict[str, str]:
+    assigned: dict[str, str] = {}
+    overlaps: dict[str, list[str]] = {}
+    for u in model.units:
+        owners = sorted(c.name for c in target.contexts if _matches(u.id, c.units))
+        if len(owners) > 1:
+            overlaps[u.id] = owners
+        elif owners:
+            assigned[u.id] = owners[0]
+    if overlaps:
+        raise OverlapError(overlaps)
+    return assigned
+
+
+def is_public(unit_id: str, context: Context) -> bool:
+    return _matches(unit_id, context.public)
+
+
+@dataclass(frozen=True)
+class ContextPair:
+    source: str
+    target: str
+    via_public: int
+    into_internals: int
+
+
+@dataclass(frozen=True)
+class WorkItem:
+    source: str
+    target: str
+    source_context: str
+    target_context: str
+    count: int
+
+
+@dataclass(frozen=True)
+class Distance:
+    unassigned: list[str]
+    pairs: list[ContextPair]
+    context_cycles: list[list[str]]
+    work_list: list[WorkItem]
+    empty_contexts: list[str]
+
+
+def distance(model: Model, target: Target, na: NotApplicable) -> Distance | None:
+    if not require(model, na, "distance", "edges"):
+        return None
+    assigned = assign_units(model, target)
+    by_name = {c.name: c for c in target.contexts}
+    public: dict[tuple[str, str], int] = {}
+    internal: dict[tuple[str, str], int] = {}
+    work: list[WorkItem] = []
+    for e in model.edges:
+        src, dst = assigned.get(e.source), assigned.get(e.target)
+        if src is None or dst is None or src == dst:
+            continue
+        if is_public(e.target, by_name[dst]):
+            public[(src, dst)] = public.get((src, dst), 0) + e.count
+        else:
+            internal[(src, dst)] = internal.get((src, dst), 0) + e.count
+            work.append(WorkItem(e.source, e.target, src, dst, e.count))
+    keys = sorted(set(public) | set(internal))
+    work.sort(key=lambda w: (w.source_context, w.target_context, -w.count, w.source, w.target))
+    return Distance(
+        unassigned=sorted(u.id for u in model.units if u.id not in assigned),
+        pairs=[ContextPair(s, t, public.get((s, t), 0), internal.get((s, t), 0)) for s, t in keys],
+        context_cycles=strongly_connected(sorted(by_name), keys),
+        work_list=work,
+        empty_contexts=sorted(set(by_name) - set(assigned.values())),
+    )
