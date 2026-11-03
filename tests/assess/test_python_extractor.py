@@ -38,6 +38,8 @@ def test_ids_paths_and_groups(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert units["shop.models.order"]["group"] == "shop.models"
     assert units["shop.models.order"]["path"] == "src/shop/models/order.py"
     assert units["shop.cli"]["group"] == "shop"
+    assert units["shop.models"]["group"] == "shop.models"
+    assert units["shop"]["group"] == "shop"
     assert model["root"] == "src"
     assert model["schema"] == "domain-powers.assess.model/1"
     assert model["language"] == "python"

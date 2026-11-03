@@ -125,10 +125,12 @@ def _root_package(root: Path, package: str | None, rels: Sequence[str]) -> str |
     return next(iter(tops)) if len(tops) == 1 else None
 
 
-def _group(module: str, root_package: str | None) -> str:
+def _group(rel: str, module: str, root_package: str | None) -> str:
     segments = module.split(".")
     if root_package is not None and segments[0] == root_package:
-        return ".".join(segments[:2]) if len(segments) > 2 else root_package  # noqa: PLR2004
+        if rel.count("/") < 2:  # noqa: PLR2004
+            return root_package
+        return ".".join(segments[:2])
     return segments[0]
 
 
@@ -225,7 +227,7 @@ def extract(
         units[module] = {
             "id": module,
             "path": path,
-            "group": _group(module, root_package),
+            "group": _group(rel, module, root_package),
             "loc": _loc(text),
             "layer_hint": _layer_hint(rel, module, root_package),
             "types": [],
