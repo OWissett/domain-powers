@@ -10,11 +10,14 @@ The core never parses source code. Extractors write a neutral model
 
 from __future__ import annotations
 
+import argparse
+import dataclasses
 import fnmatch
 import json
 import math
 import re
 import subprocess
+import sys
 import tomllib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -926,3 +929,461 @@ def cluster_units(model: Model, na: NotApplicable) -> Clusters | None:
         cohesion = _cohesion(set(members), model.edges) if model.has("edges") else None
         clusters.append(Cluster(name, top, members, cohesion))
     return Clusters(clusters, unclustered, total > 1)
+
+
+# --- Scorecard --------------------------------------------------------------------------------
+
+BOUNDS: dict[str, tuple[float, float, float, float, float]] = {
+    "boundaries": (0, 0.05, 0.15, 0.30, 0.50),
+    "language": (0.05, 0.10, 0.20, 0.30, 0.45),
+    "model_richness": (0.20, 0.35, 0.50, 0.65, 0.80),
+    "framework_isolation": (0, 0.10, 0.25, 0.50, 0.75),
+    "type_safety": (0, 1, 3, 6, 10),
+}
+UNTARGETED_BOUNDARIES_CAP = 4
+
+
+def score(value: float | None, bounds: tuple[float, float, float, float, float]) -> int | None:
+    if value is None:
+        return None
+    for index, bound in enumerate(bounds):
+        if value <= bound:
+            return 5 - index
+    return 0
+
+
+@dataclass(frozen=True)
+class Scorecard:
+    boundaries: int | None
+    language: int | None
+    model_richness: int | None
+    framework_isolation: int | None
+    type_safety: int | None
+
+
+@dataclass(frozen=True)
+class Ratchet:
+    unit_cycle_members: int | None
+    edges_into_internals: int | None
+    escapes: int | None
+    framework_refs_non_generic: int | None
+    unassigned_units: int | None
+
+
+@dataclass(frozen=True)
+class Summary:
+    units: int
+    loc: int
+    groups: int
+    edges: int
+    skipped: int
+
+
+@dataclass(frozen=True)
+class Assessment:
+    language: str
+    capabilities: frozenset[str]
+    not_applicable: NotApplicable
+    summary: Summary
+    layout: str | None
+    unit_cycles: list[list[str]] | None
+    group_cycles: list[list[str]] | None
+    hubs: list[Hub] | None
+    coupling: list[GroupCoupling] | None
+    churn: list[UnitChurn] | None
+    terms: TermSpread | None
+    richness: Richness | None
+    framework: Entanglement | None
+    escapes: Escapes | None
+    clusters: Clusters | None
+    target: Target | None
+    distance: Distance | None
+    scorecard: Scorecard
+    ratchet: Ratchet
+
+
+def _boundaries_value(
+    model: Model, group_cycle_list: list[list[str]] | None, dist: Distance | None
+) -> float | None:
+    if dist is not None:
+        total = sum(e.count for e in model.edges)
+        return sum(p.into_internals for p in dist.pairs) / total if total else None
+    if group_cycle_list is None or not model.units:
+        return None
+    cyclic = {g for component in group_cycle_list for g in component}
+    return sum(1 for u in model.units if u.group in cyclic) / len(model.units)
+
+
+def _scorecard(
+    model: Model,
+    na: NotApplicable,
+    group_cycle_list: list[list[str]] | None,
+    dist: Distance | None,
+    terms: TermSpread | None,
+    richness: Richness | None,
+    framework: Entanglement | None,
+    escapes: Escapes | None,
+) -> Scorecard:
+    boundaries = score(_boundaries_value(model, group_cycle_list, dist), BOUNDS["boundaries"])
+    if boundaries is not None and dist is None:
+        boundaries = min(boundaries, UNTARGETED_BOUNDARIES_CAP)
+    language = (
+        score(len(terms.scattered) / terms.distinct, BOUNDS["language"])
+        if terms is not None and terms.distinct
+        else None
+    )
+    card = Scorecard(
+        boundaries=boundaries,
+        language=language,
+        model_richness=score(
+            richness.data_only_share if richness else None, BOUNDS["model_richness"]
+        ),
+        framework_isolation=score(
+            framework.share if framework else None, BOUNDS["framework_isolation"]
+        ),
+        type_safety=score(escapes.per_kloc if escapes else None, BOUNDS["type_safety"]),
+    )
+    for field in dataclasses.fields(card):
+        if getattr(card, field.name) is None:
+            na[f"scorecard.{field.name}"] = "no measurable input"
+    return card
+
+
+def _ratchet(
+    unit_cycle_list: list[list[str]] | None,
+    escapes: Escapes | None,
+    framework: Entanglement | None,
+    dist: Distance | None,
+) -> Ratchet:
+    targeted = dist is not None
+    return Ratchet(
+        unit_cycle_members=(
+            sum(len(c) for c in unit_cycle_list) if unit_cycle_list is not None else None
+        ),
+        edges_into_internals=(
+            sum(p.into_internals for p in dist.pairs) if dist is not None else None
+        ),
+        escapes=escapes.total if escapes is not None else None,
+        framework_refs_non_generic=framework.refs if framework is not None and targeted else None,
+        unassigned_units=len(dist.unassigned) if dist is not None else None,
+    )
+
+
+def assess(model: Model, target: Target | None, churn_cwd: Path | None) -> Assessment:
+    na: NotApplicable = {}
+    unit_cycle_list = unit_cycles(model, na)
+    group_cycle_list = group_cycles(model, na)
+    if churn_cwd is None:
+        na["churn"] = "not requested"
+        churn_list = None
+    else:
+        churn_list = churn(model, churn_cwd, na)
+    if target is None:
+        na["distance"] = "no target"
+        dist = None
+    else:
+        dist = distance(model, target, na)
+    terms = term_spread(model, na)
+    richness = model_richness(model, na)
+    framework = framework_entanglement(model, target, na)
+    escapes = escape_totals(model, na)
+    summary = Summary(
+        units=len(model.units),
+        loc=sum(u.loc for u in model.units),
+        groups=len({u.group for u in model.units}),
+        edges=len(model.edges),
+        skipped=len(model.skipped),
+    )
+    card = _scorecard(model, na, group_cycle_list, dist, terms, richness, framework, escapes)
+    return Assessment(
+        language=model.language,
+        capabilities=model.capabilities,
+        not_applicable=na,
+        summary=summary,
+        layout=layout_style(model, na),
+        unit_cycles=unit_cycle_list,
+        group_cycles=group_cycle_list,
+        hubs=hubs(model, na),
+        coupling=coupling(model, na),
+        churn=churn_list,
+        terms=terms,
+        richness=richness,
+        framework=framework,
+        escapes=escapes,
+        clusters=cluster_units(model, na),
+        target=target,
+        distance=dist,
+        scorecard=card,
+        ratchet=_ratchet(unit_cycle_list, escapes, framework, dist),
+    )
+
+
+# --- Output -----------------------------------------------------------------------------------
+
+FLOAT_DIGITS = 4
+
+
+def _to_json(value: object) -> Json:
+    if value is None or isinstance(value, bool | int | str):
+        return value
+    if isinstance(value, float):
+        return round(value, FLOAT_DIGITS)
+    if isinstance(value, frozenset | set):
+        return [_to_json(v) for v in sorted(value)]
+    if isinstance(value, list | tuple):
+        return [_to_json(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _to_json(v) for k, v in value.items()}
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _to_json(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    raise TypeError(f"cannot serialise {type(value).__name__}")
+
+
+def assessment_json(a: Assessment) -> dict[str, Json]:
+    out: dict[str, Json] = {"schema": RESULT_SCHEMA}
+    for field in dataclasses.fields(a):
+        value = getattr(a, field.name)
+        if field.name == "target":
+            out["target"] = target_json(value) if isinstance(value, Target) else None
+        else:
+            out[field.name] = _to_json(value)
+    return out
+
+
+HUMAN_PLACEHOLDER = "<!-- human: see references/report-template.md -->"
+CHURN_ROWS = 10
+SCATTER_ROWS = 20
+
+
+def _not_applicable(a: Assessment, key: str) -> str:
+    return f"n/a: {a.not_applicable.get(key, 'not computed')}"
+
+
+def _pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value * 100:.1f}%"
+
+
+def _score_text(a: Assessment, name: str, value: int | None) -> str:
+    return f"{value} / 5" if value is not None else _not_applicable(a, f"scorecard.{name}")
+
+
+def _summary_lines(a: Assessment) -> list[str]:
+    s = a.summary
+    return [
+        "| Measure | Value |",
+        "|---|---|",
+        f"| Units | {s.units} |",
+        f"| Lines | {s.loc} |",
+        f"| Groups | {s.groups} |",
+        f"| Edges | {s.edges} |",
+        f"| Skipped files | {s.skipped} |",
+    ]
+
+
+def _scorecard_lines(a: Assessment) -> list[str]:
+    lines = ["| Dimension | Score |", "|---|---|"]
+    for field in dataclasses.fields(a.scorecard):
+        lines.append(
+            f"| {field.name} | {_score_text(a, field.name, getattr(a.scorecard, field.name))} |"
+        )
+    lines.append("")
+    if a.richness is not None:
+        lines.append(
+            f"Data-only share in model-like units: {_pct(a.richness.data_only_share)} "
+            f"({a.richness.model_types} model types, {a.richness.service_types} service types)."
+        )
+    else:
+        lines.append(f"Model richness: {_not_applicable(a, 'richness')}")
+    if a.framework is not None:
+        lines.append(
+            f"Framework entanglement: {_pct(a.framework.share)} "
+            f"({len(a.framework.units)} units, {a.framework.refs} references)."
+        )
+    else:
+        lines.append(f"Framework entanglement: {_not_applicable(a, 'framework')}")
+    if a.escapes is not None:
+        kinds = ", ".join(f"{k} {n}" for k, n in a.escapes.by_kind.items()) or "none"
+        per_kloc = "n/a" if a.escapes.per_kloc is None else f"{a.escapes.per_kloc:.2f}"
+        lines.append(f"Type escapes: {a.escapes.total} ({per_kloc} per 1,000 lines): {kinds}.")
+    else:
+        lines.append(f"Type escapes: {_not_applicable(a, 'escapes')}")
+    return lines
+
+
+def _cycle_lines(title: str, cycles: list[list[str]] | None, reason: str) -> list[str]:
+    if cycles is None:
+        return [f"{title}: {reason}"]
+    if not cycles:
+        return [f"{title}: none."]
+    return [f"{title}:", *(f"- {', '.join(sorted(c))}" for c in cycles)]
+
+
+def _hub_lines(a: Assessment) -> list[str]:
+    if a.hubs is None:
+        lines = [_not_applicable(a, "hubs")]
+    elif not a.hubs:
+        lines = ["No hubs."]
+    else:
+        lines = ["| Unit | Importers |", "|---|---|", *(f"| {h.id} | {h.fan_in} |" for h in a.hubs)]
+    lines.append("")
+    if a.coupling is None:
+        lines.append(f"Coupling: {_not_applicable(a, 'coupling')}")
+    else:
+        lines += ["| Group | Ca | Ce | Instability |", "|---|---|---|---|"]
+        for c in a.coupling:
+            inst = "n/a" if c.instability is None else f"{c.instability:.2f}"
+            lines.append(f"| {c.group} | {c.ca} | {c.ce} | {inst} |")
+    return lines
+
+
+def _churn_lines(a: Assessment) -> list[str]:
+    if a.churn is None:
+        return [_not_applicable(a, "churn")]
+    return [
+        "| Unit | Lines changed |",
+        "|---|---|",
+        *(f"| {c.id} | {c.lines} |" for c in a.churn[:CHURN_ROWS]),
+    ]
+
+
+def _term_lines(a: Assessment) -> list[str]:
+    if a.terms is None:
+        return [_not_applicable(a, "terms")]
+    if not a.terms.scattered:
+        return [f"No scattered terms among {a.terms.distinct} distinct terms."]
+    rows = [
+        f"| {t.term} | {len(t.groups)} | {', '.join(t.groups)} |"
+        for t in a.terms.scattered[:SCATTER_ROWS]
+    ]
+    return [
+        f"{len(a.terms.scattered)} of {a.terms.distinct} terms are scattered.",
+        "",
+        "| Term | Groups | Where |",
+        "|---|---|---|",
+        *rows,
+    ]
+
+
+def _cluster_lines(a: Assessment) -> list[str]:
+    if a.clusters is None:
+        return [_not_applicable(a, "clusters")]
+    if not a.clusters.separable:
+        return ["No separable clusters found."]
+    lines: list[str] = []
+    for c in a.clusters.clusters:
+        cohesion = "n/a" if c.cohesion is None else f"{c.cohesion:.2f}"
+        lines.append(
+            f"- {c.name} ({len(c.members)} units, cohesion {cohesion}): {', '.join(c.members)}"
+        )
+    if a.clusters.unclustered:
+        lines.append(f"- Unclustered: {', '.join(a.clusters.unclustered)}")
+    return lines
+
+
+def _distance_lines(a: Assessment) -> list[str]:
+    d = a.distance
+    if d is None:
+        return [_not_applicable(a, "distance")]
+    lines = [f"Unassigned units: {', '.join(d.unassigned) if d.unassigned else 'none'}.", ""]
+    if d.pairs:
+        lines += ["| From | To | Via public | Into internals |", "|---|---|---|---|"]
+        lines += [
+            f"| {p.source} | {p.target} | {p.via_public} | {p.into_internals} |" for p in d.pairs
+        ]
+    else:
+        lines.append("No cross-context edges.")
+    lines.append("")
+    lines += _cycle_lines("Context cycles", d.context_cycles, "")
+    if d.empty_contexts:
+        lines += ["", f"Empty contexts (patterns match no unit): {', '.join(d.empty_contexts)}."]
+    return lines
+
+
+def _work_lines(a: Assessment) -> list[str]:
+    if a.distance is None:
+        return [_not_applicable(a, "distance")]
+    if not a.distance.work_list:
+        return ["No edges into internals."]
+    return [
+        "| From | To | Contexts | Count |",
+        "|---|---|---|---|",
+        *(
+            f"| {w.source} | {w.target} | {w.source_context} to {w.target_context} | {w.count} |"
+            for w in a.distance.work_list
+        ),
+    ]
+
+
+def render_markdown(a: Assessment) -> str:
+    missing = sorted(CAPABILITIES - a.capabilities)
+    header = [
+        "# Migration assessment",
+        "",
+        f"Language: {a.language}. Capabilities: {', '.join(sorted(a.capabilities)) or 'none'}.",
+    ]
+    if missing:
+        header.append(f"Missing capabilities: {', '.join(missing)}")
+    cycles = [
+        *_cycle_lines("Unit cycles", a.unit_cycles, _not_applicable(a, "unit_cycles")),
+        "",
+        *_cycle_lines("Group cycles", a.group_cycles, _not_applicable(a, "group_cycles")),
+    ]
+    sections: list[tuple[str, list[str]]] = [
+        ("Summary", _summary_lines(a)),
+        ("Scorecard", _scorecard_lines(a)),
+        ("Recommendation", [HUMAN_PLACEHOLDER]),
+        ("Layout", [a.layout if a.layout is not None else _not_applicable(a, "layout")]),
+        ("Cycles", cycles),
+        ("Hubs", _hub_lines(a)),
+        ("Churn", _churn_lines(a)),
+        ("Scattered terms", _term_lines(a)),
+        ("Candidate contexts", _cluster_lines(a)),
+        ("Hotspot findings", [HUMAN_PLACEHOLDER]),
+        ("Contexts", [HUMAN_PLACEHOLDER]),
+        ("Distance to target", _distance_lines(a)),
+        ("Work list", _work_lines(a)),
+        ("Slices", [HUMAN_PLACEHOLDER]),
+    ]
+    parts = ["\n".join(header)]
+    parts += [f"## {title}\n\n" + "\n".join(lines) for title, lines in sections]
+    return "\n\n".join(parts) + "\n"
+
+
+# --- Command line -----------------------------------------------------------------------------
+
+EXIT_USAGE = 2
+
+
+def _analyse(args: argparse.Namespace) -> int:
+    model = load_model(Path(args.model))
+    target = load_target(Path(args.target)) if args.target else None
+    result = assess(model, target, Path.cwd() if args.churn else None)
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(assessment_json(result), indent=2, sort_keys=True) + "\n"
+    (out_dir / "assessment.json").write_text(text, encoding="utf-8")
+    (out_dir / "assessment.md").write_text(render_markdown(result), encoding="utf-8")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="core.py")
+    sub = parser.add_subparsers(dest="command", required=True)
+    analyse = sub.add_parser("analyse", help="score a neutral model")
+    analyse.add_argument("model")
+    analyse.add_argument("--out-dir", required=True)
+    analyse.add_argument("--target")
+    analyse.add_argument("--churn", action="store_true")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else EXIT_USAGE
+    try:
+        return _analyse(args)
+    except (ModelError, TargetError) as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_USAGE
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
