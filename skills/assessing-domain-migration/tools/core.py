@@ -11,6 +11,8 @@ The core never parses source code. Extractors write a neutral model
 from __future__ import annotations
 
 import json
+import subprocess
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -259,3 +261,221 @@ def require(model: Model, na: NotApplicable, metric: str, *capabilities: str) ->
             na[metric] = f"missing capability: {capability}"
             return False
     return True
+
+
+# --- Shape ------------------------------------------------------------------------------------
+
+LAYERING_NEUTRAL: frozenset[str] = frozenset(
+    {"domain", "application", "infrastructure", "adapters", "tests"}
+)
+HUB_LIMIT = 10
+MIN_FEATURE_GROUPS = 2
+MIN_GROUPS = 2
+NUMSTAT_FIELDS = 3
+
+
+def strongly_connected(nodes: Sequence[str], edges: Iterable[tuple[str, str]]) -> list[list[str]]:
+    """Iterative Tarjan. Returns components of more than one node, each sorted, the list sorted."""
+    known = set(nodes)
+    succ: dict[str, list[str]] = {n: [] for n in known}
+    for source, target in edges:
+        if source in known and target in known:
+            succ[source].append(target)
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    on_stack: set[str] = set()
+    stack: list[str] = []
+    found: list[list[str]] = []
+    counter = 0
+    for root in sorted(known):
+        if root in index:
+            continue
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+        work: list[tuple[str, int]] = [(root, 0)]
+        while work:
+            node, pos = work.pop()
+            if pos < len(succ[node]):
+                work.append((node, pos + 1))
+                nxt = succ[node][pos]
+                if nxt not in index:
+                    index[nxt] = low[nxt] = counter
+                    counter += 1
+                    stack.append(nxt)
+                    on_stack.add(nxt)
+                    work.append((nxt, 0))
+                elif nxt in on_stack:
+                    low[node] = min(low[node], index[nxt])
+                continue
+            if low[node] == index[node]:
+                component: list[str] = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                if len(component) > 1:
+                    found.append(sorted(component))
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+    return sorted(found)
+
+
+def layout_style(model: Model, na: NotApplicable) -> str | None:
+    if not require(model, na, "layout", "layer_hints"):
+        return None
+    total = len(model.units)
+    by_group: dict[str, list[Unit]] = {}
+    for u in model.units:
+        by_group.setdefault(u.group, []).append(u)
+    feature_groups = [
+        members
+        for members in by_group.values()
+        if {u.layer_hint for u in members} & MODEL_LIKE
+        and {u.layer_hint for u in members} & SERVICE_LIKE
+        and {u.layer_hint for u in members} & EDGE
+    ]
+    if (
+        len(feature_groups) >= MIN_FEATURE_GROUPS
+        and sum(len(g) for g in feature_groups) * 2 >= total
+    ):
+        return "feature packages"
+    technical = sum(
+        1 for u in model.units if u.layer_hint is not None and u.layer_hint not in LAYERING_NEUTRAL
+    )
+    if total and technical * 2 >= total:
+        return "technical layering"
+    return "mixed"
+
+
+def unit_cycles(model: Model, na: NotApplicable) -> list[list[str]] | None:
+    if not require(model, na, "unit_cycles", "edges"):
+        return None
+    return strongly_connected(
+        [u.id for u in model.units], [(e.source, e.target) for e in model.edges]
+    )
+
+
+def _group_edges(model: Model) -> set[tuple[str, str]]:
+    group_of = {u.id: u.group for u in model.units}
+    pairs: set[tuple[str, str]] = set()
+    for e in model.edges:
+        src, dst = group_of.get(e.source), group_of.get(e.target)
+        if src is not None and dst is not None and src != dst:
+            pairs.add((src, dst))
+    return pairs
+
+
+def _group_applicable(model: Model, na: NotApplicable, metric: str) -> bool:
+    if not require(model, na, metric, "edges"):
+        return False
+    if len({u.group for u in model.units}) < MIN_GROUPS:
+        na[metric] = "fewer than two groups"
+        return False
+    if not _group_edges(model):
+        na[metric] = "no internal edges"
+        return False
+    return True
+
+
+def group_cycles(model: Model, na: NotApplicable) -> list[list[str]] | None:
+    if not _group_applicable(model, na, "group_cycles"):
+        return None
+    return strongly_connected(sorted({u.group for u in model.units}), _group_edges(model))
+
+
+@dataclass(frozen=True)
+class Hub:
+    id: str
+    fan_in: int
+
+
+def hubs(model: Model, na: NotApplicable) -> list[Hub] | None:
+    if not require(model, na, "hubs", "edges"):
+        return None
+    importers: dict[str, set[str]] = {}
+    for e in model.edges:
+        importers.setdefault(e.target, set()).add(e.source)
+    ranked = sorted((Hub(t, len(s)) for t, s in importers.items()), key=lambda h: (-h.fan_in, h.id))
+    return ranked[:HUB_LIMIT]
+
+
+@dataclass(frozen=True)
+class GroupCoupling:
+    group: str
+    ca: int
+    ce: int
+    instability: float | None
+
+
+def coupling(model: Model, na: NotApplicable) -> list[GroupCoupling] | None:
+    if not _group_applicable(model, na, "coupling"):
+        return None
+    group_of = {u.id: u.group for u in model.units}
+    afferent: dict[str, set[str]] = {g: set() for g in group_of.values()}
+    efferent: dict[str, set[str]] = {g: set() for g in group_of.values()}
+    for e in model.edges:
+        src, dst = group_of.get(e.source), group_of.get(e.target)
+        if src is None or dst is None or src == dst:
+            continue
+        afferent[dst].add(e.source)
+        efferent[src].add(e.target)
+    result: list[GroupCoupling] = []
+    for g in sorted(afferent):
+        ca, ce = len(afferent[g]), len(efferent[g])
+        result.append(GroupCoupling(g, ca, ce, ce / (ca + ce) if ca + ce else None))
+    return result
+
+
+def parse_numstat(text: str) -> dict[str, int]:
+    """Sum added + deleted lines per path; binary and rename lines are skipped."""
+    totals: dict[str, int] = {}
+    for line in text.splitlines():
+        parts = line.split("\t", NUMSTAT_FIELDS - 1)
+        if len(parts) != NUMSTAT_FIELDS:
+            continue
+        added, deleted, path = parts
+        if added == "-" or deleted == "-" or "=>" in path:
+            continue
+        try:
+            totals[path] = totals.get(path, 0) + int(added) + int(deleted)
+        except ValueError:
+            continue
+    return totals
+
+
+@dataclass(frozen=True)
+class UnitChurn:
+    id: str
+    lines: int
+
+
+def churn(model: Model, cwd: Path, na: NotApplicable) -> list[UnitChurn] | None:
+    command = [
+        "git",
+        "-C",
+        str(cwd),
+        "log",
+        "--numstat",
+        "--format=",
+        "--relative",
+        "--since=12.months.ago",
+    ]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
+    except FileNotFoundError:
+        na["churn"] = "git unavailable"
+        return None
+    if done.returncode != 0:
+        na["churn"] = "not a git repository"
+        return None
+    totals = parse_numstat(done.stdout)
+    if not any(u.path in totals for u in model.units):
+        na["churn"] = "no git paths matched units"
+        return None
+    ranked = [UnitChurn(u.id, totals[u.path]) for u in model.units if totals.get(u.path, 0) > 0]
+    return sorted(ranked, key=lambda c: (-c.lines, c.id))
