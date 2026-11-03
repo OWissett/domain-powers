@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import re
 import subprocess
 import tomllib
@@ -782,3 +783,146 @@ def escape_totals(model: Model, na: NotApplicable) -> Escapes | None:
     total = sum(by_kind.values())
     loc = sum(u.loc for u in model.units)
     return Escapes(total, total * 1000 / loc if loc else None, dict(sorted(by_kind.items())))
+
+
+# --- Clustering -------------------------------------------------------------------------------
+
+MAX_SWEEPS = 50
+CLUSTER_TERMS = 3
+BOTH_ENDS = 2
+Weights = dict[str, dict[str, float]]
+
+
+def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    shared = a & b
+    return len(shared) / len(a | b) if shared else 0.0
+
+
+def cluster_weights(model: Model) -> Weights:
+    pair: dict[tuple[str, str], float] = {}
+    if model.has("edges"):
+        for e in model.edges:
+            if e.source != e.target:
+                key = (e.source, e.target) if e.source < e.target else (e.target, e.source)
+                pair[key] = pair.get(key, 0.0) + e.count
+    if model.has("types"):
+        terms = {u.id: unit_terms(u) for u in model.units}
+        ids = [u.id for u in model.units]
+        for i, a in enumerate(ids):
+            for b in ids[i + 1 :]:
+                similarity = _jaccard(terms[a], terms[b])
+                if similarity:
+                    pair[(a, b)] = pair.get((a, b), 0.0) + 2 * similarity
+    weights: Weights = {}
+    for (a, b), w in pair.items():
+        if w > 0:
+            weights.setdefault(a, {})[b] = w
+            weights.setdefault(b, {})[a] = w
+    return weights
+
+
+def _best_label(
+    neighbours: dict[str, float], labels: dict[str, str], exclude: str | None = None
+) -> str | None:
+    totals: dict[str, float] = {}
+    for other, w in neighbours.items():
+        label = labels[other]
+        if label != exclude:
+            totals[label] = totals.get(label, 0.0) + w
+    if not totals:
+        return None
+    return min(totals, key=lambda label: (-totals[label], label))
+
+
+def propagate_labels(unit_ids: Sequence[str], weights: Weights) -> dict[str, str]:
+    labels = {u: u for u in unit_ids}
+    order = sorted(unit_ids)
+    for _ in range(MAX_SWEEPS):
+        changed = False
+        for u in order:
+            best = _best_label(weights.get(u, {}), labels)
+            if best is not None and best != labels[u]:
+                labels[u] = best
+                changed = True
+        if not changed:
+            break
+    return labels
+
+
+def merge_singletons(labels: dict[str, str], weights: Weights) -> dict[str, str]:
+    sizes: dict[str, int] = {}
+    for label in labels.values():
+        sizes[label] = sizes.get(label, 0) + 1
+    merged = dict(labels)
+    for u in sorted(labels):
+        if sizes[labels[u]] != 1:
+            continue
+        best = _best_label(weights.get(u, {}), labels, exclude=labels[u])
+        if best is not None:
+            merged[u] = best
+    return merged
+
+
+@dataclass(frozen=True)
+class Cluster:
+    name: str
+    terms: list[str]
+    members: list[str]
+    cohesion: float | None
+
+
+@dataclass(frozen=True)
+class Clusters:
+    clusters: list[Cluster]
+    unclustered: list[str]
+    separable: bool
+
+
+def _cohesion(members: set[str], edges: Sequence[Edge]) -> float | None:
+    inside = touching = 0
+    for e in edges:
+        if e.source == e.target:
+            continue
+        ends = (e.source in members) + (e.target in members)
+        if ends:
+            touching += e.count
+        if ends == BOTH_ENDS:
+            inside += e.count
+    return inside / touching if touching else None
+
+
+def cluster_units(model: Model, na: NotApplicable) -> Clusters | None:
+    if not model.has("edges") and not model.has("types"):
+        na["clusters"] = "missing capability: edges, types"
+        return None
+    weights = cluster_weights(model)
+    ids = [u.id for u in model.units]
+    unclustered = [u for u in ids if u not in weights]
+    labels = merge_singletons(propagate_labels([u for u in ids if u in weights], weights), weights)
+    groups: dict[str, list[str]] = {}
+    for u, label in labels.items():
+        groups.setdefault(label, []).append(u)
+    member_lists = sorted(sorted(members) for members in groups.values())
+    by_id = {u.id: u for u in model.units}
+    use_types = model.has("types")
+    containing: dict[str, int] = {}
+    tf_by_cluster: list[dict[str, int]] = []
+    for members in member_lists:
+        tf: dict[str, int] = {}
+        if use_types:
+            for u in members:
+                for decl in by_id[u].types:
+                    for term in split_terms(decl.name):
+                        tf[term] = tf.get(term, 0) + 1
+        for term in tf:
+            containing[term] = containing.get(term, 0) + 1
+        tf_by_cluster.append(tf)
+    total = len(member_lists)
+    clusters: list[Cluster] = []
+    for members, tf in zip(member_lists, tf_by_cluster, strict=True):
+        scores = {t: n * math.log(total / containing[t]) for t, n in tf.items()}
+        top = sorted(scores, key=lambda t: (-scores[t], t))[:CLUSTER_TERMS]
+        name = "-".join(top) if top else members[0]
+        cohesion = _cohesion(set(members), model.edges) if model.has("edges") else None
+        clusters.append(Cluster(name, top, members, cohesion))
+    return Clusters(clusters, unclustered, total > 1)
