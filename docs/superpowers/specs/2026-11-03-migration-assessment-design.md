@@ -1,7 +1,7 @@
 # Migration Assessment Skill: Design
 
 Date: 2026-11-03
-Status: Draft for review
+Status: Approved
 Plugin: domain-powers (v0.2.0 → v0.3.0)
 
 ## 1. Understanding
@@ -211,7 +211,7 @@ Patterns are `fnmatch` globs on unit `id`; a unit matching several contexts is a
 core.py compare --baseline baseline.json --current assessment.json
 ```
 
-Ratchet metrics, which must not increase: unit-level cycle members, cross-context edges into internals, total escapes, framework refs in non-generic context units, and unassigned units. The last three need a target in both files; if the targets differ, `compare` reports that and checks only the target-independent metrics. Exit 0 if none increased, 1 if any did (printing a delta table), 2 for schema or usage errors. Decreases are reported as progress.
+Ratchet metrics, which must not increase: unit-level cycle members, cross-context edges into internals, total escapes, framework refs in non-generic context units, and unassigned units. Cross-context edges into internals, framework refs and unassigned units need a target in both files; if the targets differ, `compare` reports that and checks only the target-independent metrics. Exit 0 if none increased, 1 if any did (printing a delta table), 2 for schema or usage errors. Decreases are reported as progress.
 
 ## 8. Skill process
 
