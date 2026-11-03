@@ -10,9 +10,12 @@ Standard library only. This is a separate command: it does not import the core.
 import argparse
 import ast
 import fnmatch
+import io
 import json
 import os
+import re
 import sys
+import tokenize
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -20,6 +23,47 @@ Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 MODEL_SCHEMA = "domain-powers.assess.model/1"
 CAPABILITIES_DECLARED = ("data_only", "edges", "escapes", "framework_refs", "layer_hints", "types")
+
+# Duplicated from scripts/domain_guard.py (DEFAULT_DOMAIN_FORBIDDEN) until the language-pack
+# restructure merges the two.
+FRAMEWORK_REFS = (
+    "sqlalchemy",
+    "django",
+    "fastapi",
+    "flask",
+    "starlette",
+    "pydantic",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "urllib3",
+    "boto3",
+    "botocore",
+    "redis",
+    "celery",
+    "kombu",
+    "psycopg",
+    "psycopg2",
+    "pymongo",
+    "motor",
+    "sqlmodel",
+    "peewee",
+    "tortoise",
+    "marshmallow",
+    "os",
+    "subprocess",
+    "socket",
+    "shutil",
+    "pathlib",
+)
+
+# Duplicated from scripts/domain_guard.py (ALLOW_RE, IGNORE_RE, check_types) until the
+# language-pack restructure merges the two.
+ALLOW_RE = re.compile(r"domain-powers:\s*allow\s+\S")
+IGNORE_RE = re.compile(r"#\s*(type:\s*ignore|pyright:\s*ignore|mypy:\s*ignore-errors)(\[[^\]]*\])?")
+
+PROPERTY_DECORATORS = frozenset({"property", "cached_property", "functools.cached_property"})
+ACCESSOR_ATTRS = frozenset({"setter", "getter", "deleter"})
 
 SKIP_DIRS = frozenset({"__pycache__", "venv", "node_modules", "build", "dist", "site-packages"})
 
@@ -190,6 +234,133 @@ def _longest_unit_prefix(name: str, ids: frozenset[str]) -> str | None:
     return None
 
 
+def _decorator_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _decorator_name(node.value)
+        return None if base is None else f"{base}.{node.attr}"
+    return None
+
+
+def _is_data_function(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    if node.name.startswith("__") and node.name.endswith("__"):
+        return True
+    for decorator in node.decorator_list:
+        name = _decorator_name(decorator)
+        if name is None:
+            continue
+        if name in PROPERTY_DECORATORS or (
+            isinstance(decorator, ast.Attribute) and decorator.attr in ACCESSOR_ATTRS
+        ):
+            return True
+    return False
+
+
+def _is_data_statement(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.Pass)):
+        return True
+    if isinstance(stmt, ast.Expr):
+        return isinstance(stmt.value, ast.Constant)
+    if isinstance(stmt, ast.ClassDef):
+        return stmt.name in ("Meta", "Config")
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return _is_data_function(stmt)
+    return False
+
+
+def _types(tree: ast.Module) -> list[Json]:
+    return [
+        {"name": stmt.name, "data_only": all(_is_data_statement(s) for s in stmt.body)}
+        for stmt in tree.body
+        if isinstance(stmt, ast.ClassDef)
+    ]
+
+
+def _is_cast(call: ast.Call) -> bool:
+    fn = call.func
+    return (isinstance(fn, ast.Name) and fn.id == "cast") or (
+        isinstance(fn, ast.Attribute)
+        and fn.attr == "cast"
+        and isinstance(fn.value, ast.Name)
+        and fn.value.id in ("typing", "t")
+    )
+
+
+def _is_untyped(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+    if node.args.vararg:
+        args.append(node.args.vararg)
+    if node.args.kwarg:
+        args.append(node.args.kwarg)
+    missing = [a for a in args if a.annotation is None and a.arg not in ("self", "cls")]
+    return node.returns is None or bool(missing)
+
+
+def _escapes(text: str, tree: ast.Module, *, in_domain: bool, is_test: bool) -> dict[str, Json]:
+    """Per-kind counts of the guard's type-escape findings."""
+    lines = text.splitlines()
+
+    def justified(line: int) -> bool:
+        if in_domain or not 0 < line <= len(lines):
+            return False
+        return bool(ALLOW_RE.search(lines[line - 1]))
+
+    any_lines: set[int] = set()
+    cast_lines: list[int] = []
+    untyped_lines: list[int] = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Name) and node.id == "Any") or (
+            isinstance(node, ast.Attribute)
+            and node.attr == "Any"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in ("typing", "t", "typing_extensions")
+        ):
+            any_lines.add(node.lineno)
+        elif isinstance(node, ast.ImportFrom) and node.module in ("typing", "typing_extensions"):
+            if any(a.name == "Any" for a in node.names):
+                any_lines.add(node.lineno)
+        elif isinstance(node, ast.Call):
+            if _is_cast(node):
+                cast_lines.append(node.lineno)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_untyped(node):
+            untyped_lines.append(node.lineno)
+
+    ignore_lines: list[int] = []
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT and IGNORE_RE.search(tok.string):
+                ignore_lines.append(tok.start[0])
+    except (tokenize.TokenError, IndentationError):
+        pass
+
+    found = {
+        "ANY": sorted(any_lines),
+        "CAST": cast_lines,
+        "IGNORE": ignore_lines,
+        "UNTYPED": untyped_lines,
+    }
+    counts: dict[str, Json] = {}
+    for kind, line_numbers in found.items():
+        if is_test and kind != "IGNORE":
+            continue
+        count = sum(1 for n in line_numbers if not justified(n))
+        if count:
+            counts[kind] = count
+    return counts
+
+
+def _framework_refs(tree: ast.Module) -> list[Json]:
+    tops: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            tops.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            tops.add(node.module.split(".")[0])
+    refs: list[Json] = [top for top in sorted(tops) if top in FRAMEWORK_REFS]
+    return refs
+
+
 def extract(
     source_root: Path,
     *,
@@ -230,9 +401,14 @@ def extract(
             "group": _group(rel, module, root_package),
             "loc": _loc(text),
             "layer_hint": _layer_hint(rel, module, root_package),
-            "types": [],
-            "escapes": {},
-            "framework_refs": [],
+            "types": _types(tree),
+            "escapes": _escapes(
+                text,
+                tree,
+                in_domain="domain" in rel.split("/")[:-1],
+                is_test=_is_test_path(rel),
+            ),
+            "framework_refs": _framework_refs(tree),
         }
         trees[module] = (tree, rel.endswith("/__init__.py") or rel == "__init__.py")
 

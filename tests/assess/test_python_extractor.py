@@ -220,3 +220,99 @@ def test_script_runs_as_a_command(tmp_path: Path) -> None:
     )
     assert done.returncode == 0
     assert out.exists()
+
+
+def one_unit(model: dict[str, object], unit_id: str) -> dict[str, object]:
+    return units_by_id(model)[unit_id]
+
+
+def test_data_only_rules(tmp_path: Path) -> None:
+    source = (
+        "from dataclasses import dataclass\n"
+        "from functools import cached_property\n"
+        "\n"
+        "@dataclass\n"
+        "class A:\n"
+        "    x: int\n"
+        '    y: str = ""\n'
+        "\n"
+        "class B:\n"
+        '    """Doc."""\n'
+        "    @property\n"
+        "    def n(self) -> int:\n"
+        "        return 1\n"
+        "    @n.setter\n"
+        "    def n(self, v: int) -> None:\n"
+        "        pass\n"
+        "    @cached_property\n"
+        "    def m(self) -> int:\n"
+        "        return 2\n"
+        "    def __eq__(self, other: object) -> bool:\n"
+        "        return True\n"
+        "\n"
+        "class C(Model):\n"
+        "    name = Column()\n"
+        "    class Meta:\n"
+        "        table = 'c'\n"
+        "\n"
+        "class D:\n"
+        "    def total(self) -> int:\n"
+        "        return 1\n"
+        "\n"
+        "def f() -> None:\n"
+        "    class Inner:\n"
+        "        ...\n"
+    )
+    write_tree(tmp_path, {"m.py": source})
+    unit = one_unit(pyx.extract(tmp_path), "m")
+    assert unit["types"] == [
+        {"name": "A", "data_only": True},
+        {"name": "B", "data_only": True},
+        {"name": "C", "data_only": True},
+        {"name": "D", "data_only": False},
+    ]
+
+
+def test_escape_kinds(tmp_path: Path) -> None:
+    source = (
+        "from typing import Any, cast\n"
+        "def f(x: Any) -> None:\n"
+        "    y = cast(int, x)  # type: ignore[misc]\n"
+        "def g(z):\n"
+        "    return z\n"
+    )
+    write_tree(tmp_path, {"m.py": source, "clean.py": "x: int = 1\n"})
+    units = units_by_id(pyx.extract(tmp_path))
+    assert units["m"]["escapes"] == {"ANY": 2, "CAST": 1, "IGNORE": 1, "UNTYPED": 1}
+    assert units["clean"]["escapes"] == {}
+
+
+def test_allow_justification_outside_domain_only(tmp_path: Path) -> None:
+    source = "from typing import Any\nx: Any = 1  # domain-powers: allow legacy\n"
+    write_tree(
+        tmp_path,
+        {
+            "shop/web/a.py": source,
+            "shop/billing/domain/a.py": source,
+        },
+    )
+    units = units_by_id(pyx.extract(tmp_path))
+    assert units["shop.web.a"]["escapes"] == {"ANY": 1}
+    assert units["shop.billing.domain.a"]["escapes"] == {"ANY": 2}
+
+
+def test_tests_units_count_only_ignore(tmp_path: Path) -> None:
+    source = "from typing import Any\ndef test_x(a):\n    b: Any = a  # type: ignore[assignment]\n"
+    write_tree(tmp_path, {"shop/tests/test_a.py": source, "shop/b.py": "x = 1\n"})
+    units = units_by_id(pyx.extract(tmp_path, include_tests=True))
+    assert units["shop.tests.test_a"]["escapes"] == {"IGNORE": 1}
+
+
+def test_framework_refs(tmp_path: Path) -> None:
+    source = (
+        "import sqlalchemy.orm\nfrom flask import Flask\n"
+        "import os\nfrom . import x\nimport shop.y\n"
+    )
+    write_tree(tmp_path, {"shop/a.py": source, "shop/x.py": "", "shop/y.py": ""})
+    unit = one_unit(pyx.extract(tmp_path), "shop.a")
+    assert unit["framework_refs"] == ["flask", "os", "sqlalchemy"]
