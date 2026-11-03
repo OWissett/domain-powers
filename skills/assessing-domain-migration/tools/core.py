@@ -1351,6 +1351,84 @@ def render_markdown(a: Assessment) -> str:
     return "\n\n".join(parts) + "\n"
 
 
+# --- Ratchet ----------------------------------------------------------------------------------
+
+RATCHET_METRICS = (
+    "unit_cycle_members",
+    "edges_into_internals",
+    "escapes",
+    "framework_refs_non_generic",
+    "unassigned_units",
+)
+TARGET_DEPENDENT = frozenset(
+    {"edges_into_internals", "framework_refs_non_generic", "unassigned_units"}
+)
+NOT_APPLICABLE = "n/a"
+
+
+class RatchetError(Exception):
+    """An assessment file that compare cannot read."""
+
+
+def _ratchet_values(raw: object, side: str) -> tuple[str, object, dict[str, int | None]]:
+    if not isinstance(raw, dict):
+        raise RatchetError(f"{side}: assessment is not a JSON object")
+    schema = raw.get("schema")
+    if not isinstance(schema, str):
+        raise RatchetError(f"{side}: missing schema")
+    ratchet = raw.get("ratchet")
+    values: dict[str, int | None] = {}
+    if schema == RESULT_SCHEMA:
+        if not isinstance(ratchet, dict):
+            raise RatchetError(f"{side}: missing or malformed ratchet object")
+        for metric in RATCHET_METRICS:
+            value = ratchet.get(metric)
+            if (
+                metric not in ratchet
+                or isinstance(value, bool)
+                or not (value is None or isinstance(value, int))
+            ):
+                raise RatchetError(f"{side}: ratchet.{metric} must be an integer or null")
+            values[metric] = value
+    return schema, raw.get("target"), values
+
+
+def _ratchet_row(metric: str, before: int | None, after: int | None, *, skip: bool) -> list[str]:
+    if skip or before is None or after is None:
+        return [
+            metric,
+            NOT_APPLICABLE if before is None else str(before),
+            NOT_APPLICABLE if after is None else str(after),
+            NOT_APPLICABLE,
+            NOT_APPLICABLE,
+        ]
+    delta = after - before
+    status = "ok" if delta == 0 else "progress" if delta < 0 else "INCREASED"
+    return [metric, str(before), str(after), f"{delta:+d}" if delta else "0", status]
+
+
+def compare(baseline: object, current: object) -> tuple[int, str]:
+    """Return (exit code, report): 1 when any ratchet metric increased, 2 on a schema error."""
+    try:
+        base_schema, base_target, base = _ratchet_values(baseline, "baseline")
+        cur_schema, cur_target, cur = _ratchet_values(current, "current")
+    except RatchetError as exc:
+        return EXIT_USAGE, str(exc)
+    if base_schema != RESULT_SCHEMA or cur_schema != RESULT_SCHEMA:
+        return EXIT_USAGE, f"baseline schema {base_schema}, current schema {cur_schema}"
+    differ = base_target != cur_target
+    rows = [["metric", "baseline", "current", "delta", "status"]]
+    for metric in RATCHET_METRICS:
+        skip = differ and metric in TARGET_DEPENDENT
+        rows.append(_ratchet_row(metric, base[metric], cur[metric], skip=skip))
+    widths = [max(len(r[i]) for r in rows) for i in range(5)]
+    lines = ["  ".join(c.ljust(w) for c, w in zip(r, widths, strict=True)).rstrip() for r in rows]
+    if differ:
+        lines.insert(0, "targets differ: checking target-independent metrics only")
+    code = 1 if any(r[4] == "INCREASED" for r in rows[1:]) else 0
+    return code, "\n".join(lines)
+
+
 # --- Command line -----------------------------------------------------------------------------
 
 EXIT_USAGE = 2
@@ -1368,6 +1446,19 @@ def _analyse(args: argparse.Namespace) -> int:
     return 0
 
 
+def _compare(args: argparse.Namespace) -> int:
+    loaded: list[object] = []
+    for name in (args.baseline, args.current):
+        try:
+            loaded.append(json.loads(Path(name).read_text(encoding="utf-8")))
+        except (OSError, ValueError) as exc:
+            print(f"cannot read {name}: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+    code, text = compare(loaded[0], loaded[1])
+    print(text, file=sys.stderr if code == EXIT_USAGE else sys.stdout)
+    return code
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="core.py")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1376,10 +1467,15 @@ def main(argv: list[str]) -> int:
     analyse.add_argument("--out-dir", required=True)
     analyse.add_argument("--target")
     analyse.add_argument("--churn", action="store_true")
+    cmp = sub.add_parser("compare", help="fail when a ratchet metric increased")
+    cmp.add_argument("--baseline", required=True)
+    cmp.add_argument("--current", required=True)
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
+    if args.command == "compare":
+        return _compare(args)
     try:
         return _analyse(args)
     except (ModelError, TargetError) as exc:
