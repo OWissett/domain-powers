@@ -2,8 +2,8 @@
 """domain-powers edit guard.
 
 Two modes:
-  * Hook mode (default): reads a Claude Code PostToolUse JSON payload on stdin.
-    Checks only the lines the Edit/Write just introduced. On violations, prints
+  * Hook mode (default): reads a Claude Code or Codex PostToolUse JSON payload on stdin.
+    Checks lines introduced by Edit/Write or apply_patch. On violations, prints
     them to stderr and exits 2 so the agent sees them immediately.
   * Scan mode: ``domain_guard.py --scan PATH [PATH ...]`` checks whole files
     (for the quality gate / CI). Exits 1 on violations.
@@ -558,6 +558,59 @@ def check_markdown(path: Path, source: str, vocab: Vocabulary) -> list[Finding]:
 # ---------------------------------------------------------------- hook mode
 
 
+@dataclass
+class PatchEdit:
+    path: str
+    snippets: list[str] | None
+
+
+def patch_edits(command: str) -> list[PatchEdit]:
+    """Read changed paths and added blocks from an already-applied Codex patch."""
+    edits: list[PatchEdit] = []
+    current: PatchEdit | None = None
+    block: list[str] = []
+
+    def flush() -> None:
+        if current is not None and current.snippets is not None and block:
+            current.snippets.append("\n".join(block))
+        block.clear()
+
+    for line in command.splitlines():
+        if line.startswith("*** ") or line.startswith("@@"):
+            flush()
+        if line.startswith("*** Add File: "):
+            current = PatchEdit(line.removeprefix("*** Add File: "), None)
+            edits.append(current)
+        elif line.startswith("*** Update File: "):
+            current = PatchEdit(line.removeprefix("*** Update File: "), [])
+            edits.append(current)
+        elif line.startswith("*** Move to: ") and current is not None:
+            current.path = line.removeprefix("*** Move to: ")
+            current.snippets = None  # moving into a domain can change every import's validity
+        elif line.startswith(("*** Delete File: ", "*** End Patch")):
+            current = None
+        elif line.startswith("+") and current is not None:
+            block.append(line[1:])
+        else:
+            flush()
+    flush()
+    return edits
+
+
+def snippet_lines(source: str, snippets: list[str]) -> set[int] | None:
+    """Locate added blocks, checking the whole file if their location is ambiguous."""
+    result: set[int] = set()
+    for snippet in snippets:
+        if not snippet.strip():
+            continue
+        idx = source.find(snippet)
+        if idx < 0 or source.find(snippet, idx + 1) >= 0:
+            return None
+        start = source.count("\n", 0, idx) + 1
+        result.update(range(start, start + snippet.count("\n") + 1))
+    return result
+
+
 def changed_lines(source: str, payload: dict[str, object]) -> set[int] | None:
     """Return line numbers introduced by the tool call, or None for 'whole file'."""
     tool = payload.get("tool_name")
@@ -577,16 +630,22 @@ def changed_lines(source: str, payload: dict[str, object]) -> set[int] | None:
         )
     if not snippets:
         return None
-    result: set[int] = set()
-    for snippet in snippets:
-        if not snippet.strip():
-            continue
-        idx = source.find(snippet)
-        if idx < 0:
-            return None  # file changed since; be conservative and check everything
-        start = source.count("\n", 0, idx) + 1
-        result.update(range(start, start + snippet.count("\n") + 1))
-    return result
+    return snippet_lines(source, snippets)
+
+
+def inspect_file(path: Path, snippets: list[str] | None) -> list[Finding]:
+    if path.suffix not in (".py", ".pyi", ".md"):
+        return []
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return []
+    if path.suffix == ".md":
+        findings = check_markdown(path, source, load_vocabulary(path.parent.resolve()))
+    else:
+        findings = analyse(path, source, load_config(path.parent))
+    lines = None if snippets is None else snippet_lines(source, snippets)
+    return findings if lines is None else [f for f in findings if f.line in lines]
 
 
 def hook_main() -> int:
@@ -599,6 +658,26 @@ def hook_main() -> int:
     tin = payload.get("tool_input")
     if not isinstance(tin, dict):
         return 0
+    if payload.get("tool_name") == "apply_patch":
+        command = tin.get("command")
+        if not isinstance(command, str):
+            return 0
+        findings: list[Finding] = []
+        for edit in patch_edits(command):
+            path = Path(edit.path)
+            if not path.is_absolute() and isinstance(payload.get("cwd"), str):
+                path = Path(str(payload["cwd"])) / path
+            findings.extend(inspect_file(path, edit.snippets))
+        if not findings:
+            return 0
+        for finding in findings:
+            print(finding.render(), file=sys.stderr)
+        print(
+            "domain-powers guard: fix these findings before continuing. "
+            "Use the paired domain-powers skill for the reported rule.",
+            file=sys.stderr,
+        )
+        return 2
     raw_path = tin.get("file_path")
     if not isinstance(raw_path, str) or not raw_path.endswith((".py", ".pyi", ".md")):
         return 0

@@ -13,6 +13,9 @@ Domain-powers extends superpowers. It never replaces a superpowers skill. Superp
 
 **Process skills come first.** Invoke the superpowers process skill, then the domain-powers skill that pairs with it.
 
+In Codex, load paired skills from their files, run the shared guard, and adapt
+domain review to available subagent tools using [the Codex instructions](references/codex.md).
+
 ## Pairing
 
 | You are in... | Also invoke |
