@@ -26,6 +26,14 @@ escape_for_json() {
 }
 
 escaped="$(escape_for_json "$content")"
-ctx="<IMPORTANT>\nYou have domain-powers, which extends superpowers.\n\n**Below is your 'domain-powers:using-domain-powers' skill. Load other domain-powers skills with the Skill tool:**\n\n${escaped}\n</IMPORTANT>"
+if [ "${1:-}" = "codex" ]; then
+  codex_md="${PLUGIN_ROOT}/skills/using-domain-powers/references/codex.md"
+  codex_content="$(<"$codex_md")"
+  codex_escaped="$(escape_for_json "$codex_content")"
+  root_escaped="$(escape_for_json "$PLUGIN_ROOT")"
+  ctx="You have domain-powers alongside superpowers in Codex. Plugin root: ${root_escaped}. Read the paired SKILL.md files under that root with filesystem tools. No Skill tool is required.\n\n${escaped}\n\n${codex_escaped}"
+else
+  ctx="<IMPORTANT>\nYou have domain-powers, which extends superpowers.\n\n**Below is your 'domain-powers:using-domain-powers' skill. Load other domain-powers skills with the Skill tool:**\n\n${escaped}\n</IMPORTANT>"
+fi
 
 printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$ctx"

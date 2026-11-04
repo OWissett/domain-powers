@@ -1,6 +1,6 @@
 # domain-powers: agent brief
 
-A Claude Code plugin that extends [superpowers](https://github.com/obra/superpowers) with domain-driven design, strong boundaries and type-level guarantees. Read `README.md` for what it does. This file is for agents working **on** the plugin.
+A Claude Code and Codex plugin that extends [superpowers](https://github.com/obra/superpowers) with domain-driven design, strong boundaries and type-level guarantees. Its README describes skill routing and edit enforcement. This file is for agents working **on** the plugin.
 
 ## Working rules
 
@@ -15,6 +15,7 @@ A Claude Code plugin that extends [superpowers](https://github.com/obra/superpow
 ```bash
 claude plugin validate .
 uv run --python 3.13 --with pytest pytest tests/assess -q                     # TEST
+uv run --python 3.13 --with pytest pytest tests -q                            # includes host compatibility
 uvx ruff format --check scripts skills/assessing-domain-migration/tools tests && uvx ruff check scripts skills/assessing-domain-migration/tools tests   # LINT
 uvx --python 3.13 mypy --strict scripts/*.py skills/assessing-domain-migration/tools/core.py skills/assessing-domain-migration/tools/extractors/python.py   # TYPES
 # Vocabulary check of the plugin's own Markdown (copy the seed into a temporary docs/language.md):

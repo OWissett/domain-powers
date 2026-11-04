@@ -13,6 +13,9 @@ Domain-powers extends superpowers. It never replaces a superpowers skill. Superp
 
 **Process skills come first.** Invoke the superpowers process skill, then the domain-powers skill that pairs with it.
 
+In Codex, load paired skills from their files, run the shared guard, and adapt
+domain review to available subagent tools using [the Codex instructions](references/codex.md).
+
 ## Pairing
 
 | You are in... | Also invoke |
@@ -27,7 +30,8 @@ Domain-powers extends superpowers. It never replaces a superpowers skill. Superp
 | Assessing a codebase for a DDD migration, or reviewing a migration change | `domain-powers:assessing-domain-migration` |
 | A new or unguarded Python project | `domain-powers:quality-gates` (setup section) before writing domain code |
 
-A hook also reminds you of the pairing each time a superpowers skill loads. Follow it.
+In Claude Code, a hook also reminds you of the pairing each time a superpowers
+skill loads. In Codex, apply this table after loading the superpowers skill.
 
 ## Where the domain lives
 
@@ -41,9 +45,17 @@ If these exist, read the glossary, the documentation language and the context ma
 
 ## The edit guard
 
-After every Edit/Write to a Markdown file, the guard flags words that the documentation language or glossary lists under **Avoid** (`TERM`). Use the canonical term.
+With the plugin's edit hooks installed and trusted, the guard checks Claude
+Edit/Write calls and Codex native patches. In skills-only mode, run it manually.
 
-After every Edit/Write to a `.py` file, a hook checks what you just wrote for type escapes (`Any`, `cast`, bare `# type: ignore`), framework imports inside a domain layer, and imports that reach into another context's internals. When it reports a violation, fix the design. Do not suppress it. A suppression is legitimate only with an inline justification: `# domain-powers: allow <reason>`. The reviewer will judge that reason.
+For Markdown edits, the guard flags words that the documentation language or
+glossary lists under **Avoid** (`TERM`). Use the canonical term.
+
+For Python edits, the guard checks for type escapes (`Any`, `cast`, bare
+`# type: ignore`), framework imports inside a domain layer, and imports that reach
+into another context's internals. When it reports a violation, fix the design.
+Do not suppress it. A suppression is legitimate only with an inline justification:
+`# domain-powers: allow <reason>`. The reviewer will judge that reason.
 
 ## Red flags
 

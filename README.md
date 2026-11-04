@@ -4,6 +4,19 @@ Domain-driven design, strong boundaries and type-level guarantees for Python cod
 
 **Requires:** the superpowers plugin, Python ≥ 3.11 on the machine running hooks (for `tomllib`). Target projects use Python ≥ 3.12.
 
+## Codex support
+
+Codex desktop can load the nine skills, a startup routing hook, and a native patch
+edit guard through the Codex compatibility manifest. A skills-only installation
+also works, with explicit routing and manual guard scans. The full installation
+instructions explain hook trust, shared resource paths, updates, and limitations
+([Codex installation](.codex/INSTALL.md)).
+
+In Codex, paired skills are read from their files, and a generic subagent can use
+the domain-reviewer instructions. There is no dependency on Claude's `Skill` tool
+or named-agent registry. Skill pairing remains an agent instruction; the Codex
+patch guard runs automatically only when its plugin hooks are installed and trusted.
+
 ## How it fits superpowers
 
 | Superpowers phase | domain-powers adds |
@@ -28,6 +41,11 @@ Superpowers has no extension API, so domain-powers attaches through Claude Code'
 | Skill descriptions | Soft | Each skill's "Use when…" lets the model load it by itself; or call `/domain-powers:<skill>` |
 | `PostToolUse` on `Skill` (`scripts/pair_skills.py`) | Deterministic prompt | When a `superpowers:*` skill loads, injects the paired domain-powers skills, and tells the coordinator to add a skill-loading line to implementer subagent prompts and to dispatch `domain-reviewer` |
 | `PostToolUse` on Edit/Write (`scripts/domain_guard.py`) | Hard | Checks every edit, in the main session and in subagents |
+
+The table above describes Claude Code. Codex uses `hooks/hooks-codex.json` through
+`.codex-plugin/plugin.json`. Its startup hook also runs on resume and fork, and its
+PostToolUse hook understands Codex's `apply_patch` payload. There is no automatic
+Skill-event pairing hook in Codex; the startup instructions supply the pairing rules.
 
 ## Enforcement
 
