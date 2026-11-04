@@ -120,6 +120,66 @@ def test_codex_update_reports_only_added_violation(tmp_path: Path) -> None:
     assert "UNTYPED" not in result.stderr
 
 
+def test_codex_multiline_import_reports_new_type_escape(tmp_path: Path) -> None:
+    (tmp_path / "module.py").write_text("from typing import (\n    Any,\n    TypeVar,\n)\n")
+    result = run_guard(
+        tmp_path,
+        "apply_patch",
+        {
+            "command": """*** Begin Patch
+*** Update File: module.py
+@@
+ from typing import (
++    Any,
+     TypeVar,
+ )
+*** End Patch"""
+        },
+    )
+    assert result.returncode == 2
+    assert "ANY" in result.stderr
+
+
+def test_codex_multiline_signature_reports_new_untyped_parameter(tmp_path: Path) -> None:
+    (tmp_path / "module.py").write_text("def compute(\n    value,\n) -> int:\n    return 1\n")
+    result = run_guard(
+        tmp_path,
+        "apply_patch",
+        {
+            "command": """*** Begin Patch
+*** Update File: module.py
+@@
+ def compute(
++    value,
+ ) -> int:
+     return 1
+*** End Patch"""
+        },
+    )
+    assert result.returncode == 2
+    assert "UNTYPED" in result.stderr
+
+
+def test_codex_body_comment_does_not_recheck_legacy_signature(tmp_path: Path) -> None:
+    (tmp_path / "module.py").write_text(
+        "def legacy(value):\n    # Explain the existing behavior.\n    return value\n"
+    )
+    result = run_guard(
+        tmp_path,
+        "apply_patch",
+        {
+            "command": """*** Begin Patch
+*** Update File: module.py
+@@
+ def legacy(value):
++    # Explain the existing behavior.
+     return value
+*** End Patch"""
+        },
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_codex_delete_does_not_scan_unmodified_code(tmp_path: Path) -> None:
     (tmp_path / "module.py").write_text("def legacy(x):\n    return x\n")
     result = run_guard(

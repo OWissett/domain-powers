@@ -16,10 +16,10 @@
 
 **Boundary:** Host-specific JSON and patch parsing stop at the hook; existing Python/Markdown analysis remains shared.
 
-- [ ] Step 1: Add subprocess tests for the documented Codex patch payload, multiple files, renamed and deleted files, unchanged legacy violations, Markdown vocabulary, session guidance, and manifest hook execution. Confirm the missing behavior fails.
-- [ ] Step 2: Add Codex packaging, translate patch edits into paths and changed lines, and supply filesystem-based skill/reviewer guidance. Preserve Claude behavior with regression tests.
-- [ ] Step 3: Document plugin and skills-only installation, trust requirements, updates, limitations, and verification commands. Keep the source layout intact.
-- [ ] Step 4: Run the complete tests, Ruff, strict mypy, vocabulary scan, Claude plugin validation, and example gates. Review the diff, fix actionable findings, and open a PR.
+- [x] Step 1: Add subprocess tests for the documented Codex patch payload, multiple files, renamed and deleted files, unchanged legacy violations, Markdown vocabulary, session guidance, and manifest hook execution. Confirm the missing behavior fails.
+- [x] Step 2: Add Codex packaging, translate patch edits into paths and changed lines, and supply filesystem-based skill/reviewer guidance. Preserve Claude behavior with regression tests.
+- [x] Step 3: Document plugin and skills-only installation, trust requirements, updates, limitations, and verification commands. Keep the source layout intact.
+- [x] Step 4: Run the complete tests, Ruff, strict mypy, vocabulary scan, Claude plugin validation, and example gates. Review the diff and fix actionable findings.
 
 ## Review focus
 

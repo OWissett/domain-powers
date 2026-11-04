@@ -645,7 +645,33 @@ def inspect_file(path: Path, snippets: list[str] | None) -> list[Finding]:
     else:
         findings = analyse(path, source, load_config(path.parent))
     lines = None if snippets is None else snippet_lines(source, snippets)
+    if lines is not None and path.suffix != ".md":
+        lines = declaration_lines(source, lines)
     return findings if lines is None else [f for f in findings if f.line in lines]
+
+
+def declaration_lines(source: str, lines: set[int]) -> set[int]:
+    """Include headers when a multiline import or function signature was edited."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return lines
+    result = set(lines)
+    logical_ends = [
+        token.start[0]
+        for token in tokenize.generate_tokens(io.StringIO(source).readline)
+        if token.type == tokenize.NEWLINE
+    ]
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            end = node.end_lineno or node.lineno
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            end = next((line for line in logical_ends if line >= node.lineno), node.lineno)
+        else:
+            continue
+        if any(node.lineno <= line <= end for line in lines):
+            result.add(node.lineno)
+    return result
 
 
 def hook_main() -> int:
