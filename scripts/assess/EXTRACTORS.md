@@ -77,6 +77,16 @@ List in `capabilities` only what the extractor really produces. **A capability t
 
 | Language | Detected by | Command |
 |---|---|---|
-| `python` | `*.py` files, or `pyproject.toml` / `setup.py` / `setup.cfg` | `python3 <skill>/tools/extractors/python.py src --out model.json` |
+| `python` | `*.py` files, or `pyproject.toml` / `setup.py` / `setup.cfg` | `python3 <tools>/extractors/python.py src --out model.json` |
+| `rust` | `*.rs` files, or `Cargo.toml` | `python3 <tools>/extractors/rust.py . --out model.json` |
 
-`<skill>` is the base directory of the `assessing-domain-migration` skill. Add `--package NAME`, `--include-tests` or `--exclude GLOB` as needed. To ship a new extractor, add it under `tools/extractors/` and a row to this table.
+`<tools>` is the directory holding this file: `scripts/assess/` in the plugin, or `scripts/domain-powers/assess/` where a project vendors the tools. Add `--package NAME`, `--include-tests` or `--exclude GLOB` as needed.
+
+Notes per extractor:
+
+- **python:** units are modules; `--package` names the root package when it cannot be inferred.
+- **rust:** the source root is a workspace or crate directory. Units are `.rs` files under each crate's `src/`, with ids `crate::module::path` (crate names with `-` become `_`). With one crate, or the crate named by `--package`, groups are the crate's top-level modules; other crates are one group each. `data_only` counts constructors (`new`, `default`, `from_*`, `with_*`) and field accessors as data; trait impls are ignored. Tests are files under `tests/`, `benches/` and `examples/`, plus `#[cfg(test)]` items. `target/` is never read.
+
+## Writing an extractor
+
+Add it under `extractors/`, named by language, and a row to the table above. An extractor written in Python should take its escape and framework detection from the guard's language pack (`languages/<language>.py`), so the model counts exactly what the guard reports.

@@ -160,7 +160,7 @@ def mask(src: str) -> str:
     return "".join(chars)
 
 
-def _line_of(text: str, index: int) -> int:
+def line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
 
@@ -213,7 +213,7 @@ def use_paths(masked: str) -> list[tuple[int, list[str]]]:
         end = _statement_end(masked, m.end())
         body = masked[m.end() : end]
         tokens = [
-            (t.group(0), _line_of(masked, m.end() + t.start())) for t in TOKEN_RE.finditer(body)
+            (t.group(0), line_of(masked, m.end() + t.start())) for t in TOKEN_RE.finditer(body)
         ]
         leaves, _ = _parse_tree(tokens, 0, [])
         found.extend((line, path) for line, path in leaves if path and path != ["::"])
@@ -235,7 +235,7 @@ def qualified_paths(masked: str) -> list[tuple[int, list[str]]]:
         segments = [s.strip().removeprefix("r#") for s in text.split("::")]
         if segments and segments[0] == "":
             segments = ["::", *segments[1:]]
-        found.append((_line_of(masked, m.start()), segments))
+        found.append((line_of(masked, m.start()), segments))
     return found
 
 
@@ -262,7 +262,7 @@ def test_ranges(masked: str) -> list[tuple[int, int]]:
                     if depth == 0:
                         end = k
                         break
-        ranges.append((_line_of(masked, m.start()), _line_of(masked, end)))
+        ranges.append((line_of(masked, m.start()), line_of(masked, end)))
     return ranges
 
 
@@ -309,11 +309,11 @@ class RustLocation:
     is_test: bool = False
 
 
-def _ident(name: str) -> str:
+def ident(name: str) -> str:
     return name.replace("-", "_")
 
 
-def _read_toml(path: Path) -> dict[str, object] | None:
+def read_toml(path: Path) -> dict[str, object] | None:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -333,7 +333,7 @@ def _metadata(data: dict[str, object]) -> dict[str, object] | None:
 
 
 def _strings(raw: object) -> tuple[str, ...]:
-    return tuple(_ident(str(x)) for x in raw) if isinstance(raw, list) else ()
+    return tuple(ident(str(x)) for x in raw) if isinstance(raw, list) else ()
 
 
 @lru_cache(maxsize=256)
@@ -342,7 +342,7 @@ def load_config(start: Path) -> RustConfig:
         candidate = directory / "Cargo.toml"
         if not candidate.is_file():
             continue
-        data = _read_toml(candidate)
+        data = read_toml(candidate)
         section = None if data is None else _metadata(data)
         if section is None:
             continue
@@ -365,10 +365,10 @@ def crate_of(start: Path) -> tuple[str, Path] | None:
         candidate = directory / "Cargo.toml"
         if not candidate.is_file():
             continue
-        data = _read_toml(candidate)
+        data = read_toml(candidate)
         package = None if data is None else data.get("package")
         if isinstance(package, dict) and isinstance(package.get("name"), str):
-            return _ident(package["name"]), directory
+            return ident(package["name"]), directory
     return None
 
 
@@ -509,7 +509,7 @@ def escape_findings(path: Path, src: Source, *, is_test: bool) -> list[Finding]:
     patterns = (("UNSAFE", UNSAFE_RE), ("PANIC", PANIC_RE), ("CAST", CAST_RE), ("ANY", ANY_RE))
     for code, pattern in (*patterns, ("IGNORE", IGNORE_RE)):
         for m in pattern.finditer(src.masked):
-            line = _line_of(src.masked, m.start())
+            line = line_of(src.masked, m.start())
             if code != "IGNORE" and (is_test or src.in_test(line)):
                 continue
             findings.append(Finding(path, line, code, MESSAGES[code]))
