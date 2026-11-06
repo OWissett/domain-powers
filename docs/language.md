@@ -35,12 +35,13 @@ The domain-powers edit guard reads the **Avoid** column and flags those words in
 
 | Term | Definition | Not | Avoid |
 |---|---|---|---|
-| context | A bounded context: a package where each domain term has one meaning | The model's working memory (say "context window") | domain area, subdomain |
+| context | A bounded context: a package, module or crate where each domain term has one meaning | The model's working memory (say "context window") | domain area, subdomain |
 | layer | One of domain, application, infrastructure, plus the `api` module, inside a context | A context | architectural tier |
-| port | A `typing.Protocol` the domain or application needs | Its implementation | interface, abstraction |
-| adapter | An infrastructure class implementing a port | A port | driver |
+| port | A contract the domain or application declares for something it needs (a Python `Protocol`, a Rust trait) | Its implementation | interface, abstraction |
+| adapter | An infrastructure type implementing a port | A port | driver |
 | domain event | A past-tense fact recorded by an aggregate, internal to its context | An integration event | domain message |
-| integration event | A versioned event in a context's `api.py`, for other contexts | A domain event | external event, public event |
+| language pack | The per-language files for one language: pack card, skill variants, guard module and extractor | The agnostic core they plug into | language plugin, language support module |
+| integration event | A versioned event in a context's public `api` module, for other contexts | A domain event | external event, public event |
 
 ## Allowed phrases
 

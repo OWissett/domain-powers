@@ -14,10 +14,9 @@ A Claude Code and Codex plugin that extends [superpowers](https://github.com/obr
 
 ```bash
 claude plugin validate .
-uv run --python 3.13 --with pytest pytest tests/assess -q                     # TEST
-uv run --python 3.13 --with pytest pytest tests -q                            # includes host compatibility
-uvx ruff format --check scripts skills/assessing-domain-migration/tools tests && uvx ruff check scripts skills/assessing-domain-migration/tools tests   # LINT
-uvx --python 3.13 mypy --strict scripts/*.py skills/assessing-domain-migration/tools/core.py skills/assessing-domain-migration/tools/extractors/python.py   # TYPES
+uv run --python 3.13 --with pytest pytest tests -q                            # TEST (guard, assessment, host compatibility)
+uvx ruff format --check scripts tests && uvx ruff check scripts tests   # LINT
+uvx --python 3.13 mypy --strict scripts/*.py scripts/languages/*.py scripts/assess/*.py scripts/assess/extractors/*.py   # TYPES
 # Vocabulary check of the plugin's own Markdown (copy the seed into a temporary docs/language.md):
 tmp=$(mktemp -d); mkdir -p "$tmp/docs"; cp skills/defining-documentation-language/references/language-seed.md "$tmp/docs/language.md"
 cp -r skills agents README.md "$tmp/"; python3 scripts/domain_guard.py --scan "$tmp"
