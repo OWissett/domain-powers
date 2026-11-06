@@ -1,6 +1,7 @@
 # Copy to deny.toml at the workspace root. Gate 4 runs `cargo deny check bans`.
 # `wrappers` lists the crates allowed to depend on a denied crate directly.
-# Only name crates your workspace really uses.
+# Only name wrappers that really depend on the crate: cargo-deny warns about unused ones.
+# A crate nobody may use gets an entry without `wrappers`.
 
 [graph]
 all-features = true

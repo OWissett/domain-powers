@@ -23,13 +23,12 @@
 use proptest::prelude::*;
 
 pub fn sku() -> impl Strategy<Value = Sku> {
-    ("[A-Z]{3}", 0u16..10_000).prop_map(|(a, n)| {
-        Sku::parse(&format!("{a}-{n:04}")).expect("generator builds valid SKUs")
-    })
+    ("[A-Z]{3}", 0u16..10_000)
+        .prop_filter_map("valid SKU", |(a, n)| Sku::parse(&format!("{a}-{n:04}")).ok())
 }
 
 pub fn money_gbp() -> impl Strategy<Value = Money> {
-    (0i64..1_000_000).prop_map(|minor| Money::new(minor, Currency::Gbp).expect("non-negative"))
+    (0i64..1_000_000).prop_filter_map("valid money", |minor| Money::new(minor, Currency::Gbp).ok())
 }
 
 pub fn raw_bad_sku() -> impl Strategy<Value = String> {
@@ -37,7 +36,7 @@ pub fn raw_bad_sku() -> impl Strategy<Value = String> {
 }
 ```
 
-Generators go through the domain's own constructors, so they produce only valid values. `expect` is fine here: test code may panic, and `clippy.toml` allows it in tests.
+Generators go through the domain's own constructors, so they produce only valid values; `prop_filter_map` drops any value the constructor refuses, which also keeps the generator free of `expect`. The `clippy.toml` test allowances apply inside `#[test]` functions (including those `proptest!` generates) and `#[cfg(test)]` modules, not to free helper functions in an integration-test file, so write helpers this way.
 
 ## Value object: rejection and round trip
 
@@ -61,8 +60,8 @@ proptest! {
 proptest! {
     #[test]
     fn money_addition_is_associative(a in money_gbp(), b in money_gbp(), c in money_gbp()) {
-        let left = a.add(b).and_then(|ab| ab.add(c));
-        let right = b.add(c).and_then(|bc| a.add(bc));
+        let left = a.checked_add(b).and_then(|ab| ab.checked_add(c));
+        let right = b.checked_add(c).and_then(|bc| a.checked_add(bc));
         prop_assert_eq!(left, right);
     }
 }

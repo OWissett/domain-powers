@@ -67,7 +67,8 @@ type = "forbidden"
 source_modules = ["shop.ordering.domain", "shop.billing.domain"]
 forbidden_modules = ["sqlalchemy", "django", "fastapi", "flask", "pydantic", "requests", "httpx", "boto3"]
 # forbidden_modules must be installed for import-linter to resolve them;
-# drop any your project doesn't depend on.
+# drop any your project doesn't depend on. The same holds for your own modules: import-linter
+# >= 2.16 rejects a forbidden module that does not exist yet, so list only existing layers.
 
 [[tool.importlinter.contracts]]
 name = "ordering reaches billing only via api"

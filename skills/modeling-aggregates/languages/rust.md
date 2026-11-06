@@ -76,7 +76,7 @@ impl Order {
     pub fn lines(&self) -> &[OrderLine] { &self.lines }
 
     pub fn total(&self) -> Result<Money, MoneyError> {
-        self.lines.iter().try_fold(Money::zero(Currency::Gbp), |sum, line| sum.add(line.total()?))
+        self.lines.iter().try_fold(Money::zero(Currency::Gbp), |sum, line| sum.checked_add(line.total()?))
     }
 
     // --- events ---

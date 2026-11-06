@@ -102,7 +102,7 @@ impl Money {
         if minor < 0 { Err(MoneyError::Negative) } else { Ok(Self { minor, currency }) }
     }
 
-    pub fn add(self, other: Self) -> Result<Self, MoneyError> {
+    pub fn checked_add(self, other: Self) -> Result<Self, MoneyError> {
         if self.currency != other.currency {
             return Err(MoneyError::CurrencyMismatch);
         }

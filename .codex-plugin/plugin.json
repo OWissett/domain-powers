@@ -1,8 +1,10 @@
 {
   "name": "domain-powers",
-  "version": "0.3.0",
-  "description": "Domain-driven design, boundaries and type guarantees alongside superpowers",
-  "author": {"name": "wissettol"},
+  "version": "0.4.0",
+  "description": "Domain-driven design, boundaries and type guarantees for Python and Rust alongside superpowers",
+  "author": {
+    "name": "wissettol"
+  },
   "repository": "https://github.com/OWissett/domain-powers",
   "license": "MIT",
   "skills": "./skills/",

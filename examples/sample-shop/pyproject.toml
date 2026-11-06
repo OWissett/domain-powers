@@ -84,7 +84,9 @@ forbidden_modules = ["sqlalchemy", "django", "fastapi", "flask", "pydantic", "re
 name = "ordering reaches billing only via api"
 type = "forbidden"
 source_modules = ["shop.ordering"]
-forbidden_modules = ["shop.billing.domain", "shop.billing.application", "shop.billing.infrastructure"]
+# billing has only a domain layer so far; add its application and infrastructure here when they exist
+# (import-linter >= 2.16 rejects forbidden modules that do not exist).
+forbidden_modules = ["shop.billing.domain"]
 
 [[tool.importlinter.contracts]]
 name = "billing reaches ordering only via api"

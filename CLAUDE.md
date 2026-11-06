@@ -8,6 +8,7 @@ A Claude Code and Codex plugin that extends [superpowers](https://github.com/obr
 - Use the plugin's own vocabulary (`skills/defining-documentation-language/references/language-seed.md`): phase, plan, task, step, batch, round, fix wave, gate, slice. Never `stage` for a phase.
 - Skill descriptions start with "Use when…" and never summarise the workflow (superpowers:writing-skills).
 - Scripts are Python 3.11+ standard library only, and must pass `ruff format --check`, `ruff check` (config in `ruff.toml`) and `mypy --strict`.
+- Language packs: agnostic files never name a language's syntax or tools. Language detail goes in `skills/<skill>/languages/<language>.md`, `scripts/languages/<language>.py` and `scripts/assess/extractors/<language>.py` (README, Language packs).
 - The plugin's `docs/` and `examples/` are not shipped in the `.plugin` archive.
 
 ## Verify
@@ -20,11 +21,21 @@ uvx --python 3.13 mypy --strict scripts/*.py scripts/languages/*.py scripts/asse
 # Vocabulary check of the plugin's own Markdown (copy the seed into a temporary docs/language.md):
 tmp=$(mktemp -d); mkdir -p "$tmp/docs"; cp skills/defining-documentation-language/references/language-seed.md "$tmp/docs/language.md"
 cp -r skills agents README.md "$tmp/"; python3 scripts/domain_guard.py --scan "$tmp"
-# Example project: every gate green
-cd examples/sample-shop && pip install -e . ruff mypy import-linter hypothesis pytest && ./scripts/check.sh
+# Example projects: every gate green
+(cd examples/sample-shop && pip install -e . ruff mypy import-linter hypothesis pytest && ./scripts/check.sh)
+(cd examples/rust-shop && ./scripts/check.sh)   # needs rustfmt, clippy, cargo-deny
 ```
 
-`examples/sample-shop/scripts/domain_guard.py` is a vendored copy of `scripts/domain_guard.py`. Refresh it whenever the guard changes.
+Both examples vendor `scripts/domain_guard.py`, `scripts/languages/` and `scripts/assess/` as `scripts/domain-powers/`, and copy `skills/quality-gates/references/check.sh` as `scripts/check.sh`. Refresh them whenever the tools change:
+
+```bash
+for ex in examples/sample-shop examples/rust-shop; do
+  rm -rf "$ex/scripts/domain-powers" && mkdir -p "$ex/scripts/domain-powers"
+  cp -r scripts/domain_guard.py scripts/languages scripts/assess "$ex/scripts/domain-powers/"
+  find "$ex/scripts/domain-powers" -name __pycache__ -prune -exec rm -rf {} +
+  cp skills/quality-gates/references/check.sh "$ex/scripts/check.sh"
+done
+```
 
 ## Packaging
 
@@ -32,12 +43,11 @@ cd examples/sample-shop && pip install -e . ruff mypy import-linter hypothesis p
 zip -qr /tmp/domain-powers.plugin . -x ".git/*" "docs/*" "examples/*" "tests/*" "*.DS_Store" ".gitignore" "CLAUDE.md" "ruff.toml" ".superpowers/*" ".mypy_cache/*" ".pytest_cache/*" ".ruff_cache/*" "*/__pycache__/*" "*.pyc"
 ```
 
-## Current state (2026-11-03)
+## Current state (2026-11-06)
 
-- `main`: v0.2.0. Eight skills, the `domain-reviewer` agent, a SessionStart routing hook, the edit guard (Python and Markdown), and the superpowers pairing hook.
-- `feature/migration-assessment`: v0.3.0, ready for review. Nine skills (adds `assessing-domain-migration`), the assessment tools (Python extractor and `core.py analyse`/`compare`), gate 8 (`migration`) and the reviewer's migration mode. Spec: `docs/superpowers/specs/2026-11-03-migration-assessment-design.md`.
+- `main`: v0.3.0 with Codex support. Nine skills, the `domain-reviewer` agent, SessionStart routing hooks (Claude Code and Codex), the edit guard (Python and Markdown), the superpowers pairing hook, and the migration assessment tools.
+- `feature/language-packs`: v0.4.0. The plugin is an agnostic core plus Python and Rust language packs: agnostic skills with `languages/` variants and pack cards, the guard split into a core and `scripts/languages/`, assessment tools moved to `scripts/assess/` with a Rust extractor, gates defined once in `check.sh` with a command map per language, and `examples/rust-shop`. Spec: `docs/superpowers/specs/2026-11-06-language-packs-design.md`.
 
-## Queued work (in order)
+## Queued work
 
-1. **Language-pack restructure**: apply the convention from spec section 3 to everything else. Skills become agnostic with `languages/python.md` variants, the guard becomes a core plus per-language checkers, gates are defined once with a command map per language, and the reviewer checklist is split the same way. The assessment extractor's duplicated escape detection merges with the guard here. This needs its own brainstorming and spec.
-2. **Rust language pack**: extractor, guard checker, gates (`cargo fmt`, `clippy -D warnings`, `cargo deny`, `proptest`) and reference files. C may follow.
+1. **C language pack** (or another language): pack card, skill variants, guard module, extractor, `check.sh` case, example.
