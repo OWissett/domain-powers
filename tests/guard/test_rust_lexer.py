@@ -103,3 +103,13 @@ def test_resolve_super_self_crate_and_local() -> None:
     ]
     assert rust.resolve(["::", "serde"], "shop", module, set()) == ["serde"]
     assert rust.resolve(["sqlx", "PgPool"], "shop", module, set()) == ["sqlx", "PgPool"]
+
+
+def test_precise_capture_use_is_not_a_use_item() -> None:
+    masked = rust.mask(
+        "fn f<'a>(x: &'a u8) -> impl Sized + use<'a> { sqlx::query(x); }\n"
+        '#[cfg(feature = "x")] use crate::a::B;\n'
+        "pub(crate) use super::c::D;\n"
+    )
+    assert rust.use_paths(masked) == [(2, ["crate", "a", "B"]), (3, ["super", "c", "D"])]
+    assert rust.qualified_paths(masked) == [(1, ["sqlx", "query"])]

@@ -62,8 +62,11 @@ def justify(findings: list[Finding], source: str, *, in_domain: bool) -> list[Fi
 
 
 def escape_counts(findings: list[Finding]) -> dict[str, int]:
-    """Count findings by code, for an extractor's `escapes` field."""
+    """Count findings by code, for an extractor's `escapes` field.
+
+    Like the guard, one line reports a code once, however often it occurs there.
+    """
     counts: dict[str, int] = {}
-    for f in findings:
-        counts[f.code] = counts.get(f.code, 0) + 1
+    for _, code in sorted({(f.line, f.code) for f in findings}):
+        counts[code] = counts.get(code, 0) + 1
     return dict(sorted(counts.items()))

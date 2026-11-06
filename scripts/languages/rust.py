@@ -55,7 +55,11 @@ DEFAULT_DOMAIN_FORBIDDEN = (
 TEST_DIRS = ("tests", "benches", "examples")
 
 IDENT = r"(?:r#)?[A-Za-z_][A-Za-z0-9_]*"
-USE_RE = re.compile(r"\b(?:use|extern\s+crate)\b")
+# A `use` item starts a statement: at the start of the text or after `;`, `{`, `}` or an
+# attribute's `]`, optionally behind a visibility. This skips `impl Trait + use<'a>`.
+USE_RE = re.compile(
+    r"(?:\A|(?<=[;{}\]]))\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?P<kw>\buse\b|\bextern\s+crate\b)"
+)
 QUALIFIED_RE = re.compile(rf"(?<![\w:])(?:::\s*)?{IDENT}(?:\s*::\s*{IDENT})+")
 MOD_RE = re.compile(rf"\bmod\s+({IDENT})\s*[;{{]")
 CFG_TEST_RE = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
@@ -221,7 +225,7 @@ def use_paths(masked: str) -> list[tuple[int, list[str]]]:
 
 
 def _use_spans(masked: str) -> list[tuple[int, int]]:
-    return [(m.start(), _statement_end(masked, m.end())) for m in USE_RE.finditer(masked)]
+    return [(m.start("kw"), _statement_end(masked, m.end())) for m in USE_RE.finditer(masked)]
 
 
 def qualified_paths(masked: str) -> list[tuple[int, list[str]]]:

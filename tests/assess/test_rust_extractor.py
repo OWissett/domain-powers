@@ -244,3 +244,15 @@ def test_model_accepted_by_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     result = core.assess(model, None, None)
     assert result.language == "rust"
     assert not result.not_applicable.get("hubs")
+
+
+def test_escape_counts_match_the_guard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_tree(
+        tmp_path / "shop",
+        {
+            "Cargo.toml": '[package]\nname = "shop"\nversion = "0.1.0"\n',
+            "src/lib.rs": "pub fn f() { a.unwrap(); b.unwrap(); }\npub fn g() { c.unwrap(); }\n",
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+    assert units_by_id(rsx.extract(Path("shop")))["shop"]["escapes"] == {"PANIC": 2}
