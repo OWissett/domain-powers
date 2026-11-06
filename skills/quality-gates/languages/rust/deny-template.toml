@@ -1,0 +1,21 @@
+# Copy to deny.toml at the workspace root. Gate 4 runs `cargo deny check bans`.
+# `wrappers` lists the crates allowed to depend on a denied crate directly.
+# Only name crates your workspace really uses.
+
+[graph]
+all-features = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true   # workspace path dependencies (members have publish = false)
+deny = [
+  # Frameworks and I/O: only crates that hold infrastructure, and the binary.
+  { crate = "sqlx", wrappers = ["ordering", "billing", "app"] },
+  { crate = "reqwest", wrappers = ["billing"] },
+  { crate = "axum", wrappers = ["app"] },
+  { crate = "tokio", wrappers = ["app"] },
+  { crate = "serde", wrappers = ["ordering", "billing", "app"] },
+  # A context's split-out domain crate: only its own context crate may use it.
+  { crate = "ordering-domain", wrappers = ["ordering"] },
+]

@@ -1,0 +1,35 @@
+# --- domain-powers quality configuration: merge into the workspace Cargo.toml ---
+# Replace the context names with your own. Every member crate needs:
+#   [lints]
+#   workspace = true
+# and `publish = false` unless it is published.
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Type escapes the guard also reports (PANIC, CAST, IGNORE). Tests are exempt via clippy.toml.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+unreachable = "warn"
+as_conversions = "warn"
+indexing_slicing = "warn"
+# Exhaustiveness: a new enum variant must break every match that should handle it.
+wildcard_enum_match_arm = "warn"
+# A suppression must say why (the guard also wants `// domain-powers: allow <reason>`).
+allow_attributes_without_reason = "warn"
+dbg_macro = "warn"
+# Pedantic lints that fight domain naming; allowed by design, not to go green.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+
+[workspace.metadata.domain-powers]
+contexts = ["ordering", "billing"]
+shared = ["shared_kernel"]
+public_module = "api"
+domain_forbidden = []

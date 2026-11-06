@@ -1,4 +1,21 @@
-# Hypothesis Patterns for Domain Code
+# Testing Invariants: Python (Hypothesis)
+
+## Tooling by layer
+
+| Layer | Tooling |
+|---|---|
+| Value objects | `hypothesis` (`@given`) |
+| Aggregates | `hypothesis.stateful.RuleBasedStateMachine` |
+| Application | pytest with in-memory fakes |
+| ACL / translators | pytest + recorded payload fixtures |
+| Adapters | pytest + testcontainers, one contract suite parametrised over fake and real |
+| Context `api` | pytest contract tests |
+| Architecture | `lint-imports` |
+
+- Name each property test after its glossary invariant: `test_order_total_is_never_negative`.
+- When Hypothesis shrinks a failure, add the minimal case as `@example(...)` so it stays a regression test.
+- Register value-object strategies in `tests/strategies.py` with `st.register_type_strategy`, and build them from the domain constructors (`st.builds(Sku.parse, ...)`).
+- Never `@settings(max_examples=1)`, `pytest.skip` or `xfail` an invariant test.
 
 ## Shared strategies (tests/strategies.py)
 

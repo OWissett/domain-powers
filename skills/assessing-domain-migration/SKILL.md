@@ -48,22 +48,22 @@ Details are in `references/migration-playbook.md`.
 
 ## Running the tools
 
-Run everything from the project root. `<skill>` is this skill's base directory.
+Run everything from the project root. `<tools>` is the plugin's `scripts/assess/` directory (`../../scripts/assess` from this SKILL.md), or `scripts/domain-powers/assess/` where the project vendors the tools.
 
-1. **Check for generated or vendored code first** (protobuf output, migrations, `vendor/`, bundled third-party sources). Pass each location as `--exclude GLOB`; otherwise it distorts every metric.
-2. **Pick the extractor** from the Shipped extractors table in `<skill>/tools/EXTRACTORS.md`. Run the extractor's command from that table, adding `--exclude` globs, and write the model to a scratch directory (`out=$(mktemp -d)`; `--out "$out/model.json"`). Never commit the model.
+1. **Check for generated or vendored code first** (protobuf or other generated output, database migrations, `vendor/`, bundled third-party sources, build output). Pass each location as `--exclude GLOB`; otherwise it distorts every metric.
+2. **Pick the extractor** from the Shipped extractors table in `<tools>/EXTRACTORS.md`, by the project's language. Run the extractor's command from that table, adding `--exclude` globs, and write the model to a scratch directory (`out=$(mktemp -d)`; `--out "$out/model.json"`). Never commit the model.
    Record every option beyond the source root (each `--exclude` and its glob, `--include-tests`, `--package`) in `docs/domain/migration/extractor-args`, one argument per line, blank lines ignored, for example `--exclude` then `shop/generated/*` on the next line. The `migration` gate and the reviewer read that file, so later runs measure the same code the baseline did. Commit it in phase 7 with the baseline.
 3. **Analyse:**
 
    ```bash
-   python3 <skill>/tools/core.py analyse "$out/model.json" --out-dir docs/domain/migration [--target docs/domain/migration/target.toml] [--churn]
+   python3 <tools>/core.py analyse "$out/model.json" --out-dir docs/domain/migration [--target docs/domain/migration/target.toml] [--churn]
    ```
 
    This writes `assessment.json` and `assessment.md` in the output directory. The generated report has four human sections (Recommendation, Hotspot findings, Contexts, Slices), each holding a placeholder; fill them as `references/report-template.md` describes.
 4. **Compare** a later state against the committed baseline (exit 0: nothing worse; 1: a ratchet metric increased; 2: usage or schema error):
 
    ```bash
-   python3 <skill>/tools/core.py compare --baseline docs/domain/migration/baseline.json --current <dir>/assessment.json
+   python3 <tools>/core.py compare --baseline docs/domain/migration/baseline.json --current <dir>/assessment.json
    ```
 
 5. **Phase 7:** rename `assessment.md` to `assessment-YYYY-MM-DD.md` and `assessment.json` to `baseline.json`, both in `docs/domain/migration/`, and commit them with `target.toml` and `extractor-args`.
@@ -99,7 +99,7 @@ The scorecard rubric is in `references/scorecard.md`; recognising the starting l
 
 | Situation | What to do |
 |---|---|
-| No extractor for a detected language | Read the code yourself for the same facts (units, dependencies, type names). List the missing capabilities at the top of the report; the scorecard dimensions that need them read *n/a*. Offer to add an extractor from the contract in `tools/EXTRACTORS.md`. |
+| No extractor for a detected language | Read the code yourself for the same facts (units, dependencies, type names). List the missing capabilities at the top of the report; the scorecard dimensions that need them read *n/a*. Offer to add an extractor from the contract in `<tools>/EXTRACTORS.md`. |
 | Files skipped by the extractor | The report shows the count; the paths are in `model.json` under `skipped`. Read them: if skipped files are central (a hub, a model package), fix the cause or exclude them knowingly, and say which in the report. |
 | "No separable clusters found" | A finding in itself: the code has no seams to cut along. Take contexts from the glossary and the human partner's language instead, and expect a larger work list. |
 | Not a git repo | Churn reads *n/a*; decide on the other evidence. |

@@ -1,4 +1,4 @@
-# Aggregates in Python
+# Aggregates: Python
 
 ## Domain events
 

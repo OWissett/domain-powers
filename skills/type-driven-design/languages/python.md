@@ -1,4 +1,38 @@
-# Python Type Patterns (Python ≥ 3.12, mypy --strict / pyright strict)
+# Type-Driven Design: Python (≥ 3.12, mypy --strict / pyright strict)
+
+## Escapes
+
+| Escape | Guard code | Instead |
+|---|---|---|
+| `typing.Any` | `ANY` | A precise type, a `Protocol`, a `TypeVar`, or `object` plus narrowing |
+| `typing.cast()` | `CAST` | `isinstance` / `match` narrowing, or a parse into a precise type |
+| `# type: ignore`, `# pyright: ignore`, `# mypy: ignore-errors` | `IGNORE` | Fix the design so the checker agrees |
+| A function missing parameter or return annotations | `UNTYPED` | Annotate it; an untyped def is `Any` |
+
+The only accepted suppression is narrow and justified, outside `domain`:
+`# type: ignore[import-untyped]  # domain-powers: allow vendor lib ships no stubs`.
+
+## The patterns in Python
+
+| Pattern | Python |
+|---|---|
+| Value object | `@dataclass(frozen=True, slots=True)` with a `parse`/`create` classmethod that validates |
+| Distinct identity type | `NewType("OrderId", UUID)` |
+| Enumeration / tagged union | `Enum`; a union of frozen dataclasses (`Draft \| Placed \| Cancelled`) |
+| Typed record at the edge | `TypedDict`, then parse into a dataclass |
+| Result type | `Ok[T] \| Err[E]`, or a union of outcome dataclasses |
+| Exhaustive matching | `match` with a final `case _: assert_never(x)` |
+| Immutable collection | `tuple` instead of `list`, `frozenset` instead of `set` |
+
+## Where each tool belongs
+
+| Layer | Allowed |
+|---|---|
+| `domain` | stdlib `dataclasses`, `enum`, `typing` (`NewType`, `Protocol`, `Literal`, `assert_never`, `Self`), `decimal`, `datetime`, `uuid`. **No pydantic**: its coercion ("1" → 1) is exactly the leniency the domain must not have. |
+| `application` | Same as domain, plus ports. Commands and results are frozen dataclasses. |
+| `infrastructure` / `web` | pydantic, `TypedDict`, ORM models, for parsing *external* data, then immediately converting to domain types. |
+
+A library with no types: write a minimal `.pyi` stub, or wrap it in a typed adapter in `infrastructure`.
 
 ## Identity: NewType
 
@@ -186,4 +220,4 @@ pydantic in `strict=True` mode, at the edge only. The command is all domain type
 
 ## Checker settings that make this bite
 
-See `domain-powers:quality-gates` → `references/pyproject-template.toml`: `mypy --strict` plus `warn_unreachable`, `enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool", "possibly-undefined"]`, and ruff rules `ANN`, `ANN401` (no `Any`), `PGH003` (no blanket ignores), `TC`, `FBT` (boolean trap), `PLR2004` (magic values).
+See `domain-powers:quality-gates` → `languages/python/pyproject-template.toml`: `mypy --strict` plus `warn_unreachable`, `enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool", "possibly-undefined"]`, and ruff rules `ANN`, `ANN401` (no `Any`), `PGH003` (no blanket ignores), `TC`, `FBT` (boolean trap), `PLR2004` (magic values).

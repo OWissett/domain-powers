@@ -1,6 +1,6 @@
 ---
 name: using-domain-powers
-description: Use when starting any conversation in a Python codebase alongside superpowers - establishes which domain-powers skill applies in each superpowers phase
+description: Use when starting any conversation in a codebase alongside superpowers - establishes which domain-powers skill applies in each superpowers phase
 ---
 
 <SUBAGENT-STOP>
@@ -28,10 +28,16 @@ domain review to available subagent tools using [the Codex instructions](referen
 | `superpowers:verification-before-completion` | `domain-powers:quality-gates` |
 | `superpowers:requesting-code-review` | also dispatch the `domain-powers:domain-reviewer` agent |
 | Assessing a codebase for a DDD migration, or reviewing a migration change | `domain-powers:assessing-domain-migration` |
-| A new or unguarded Python project | `domain-powers:quality-gates` (setup section) before writing domain code |
+| A new or unguarded project | `domain-powers:quality-gates` (setup section) before writing domain code |
 
 In Claude Code, a hook also reminds you of the pairing each time a superpowers
 skill loads. In Codex, apply this table after loading the superpowers skill.
+
+## Language packs
+
+The skills are language-agnostic; each one has a `languages/<language>.md` variant with the code, tools and commands for that language. Shipped languages: **Python** and **Rust**.
+
+Detect the project's language from its manifest (`pyproject.toml` → Python, `Cargo.toml` → Rust) and read its **pack card** first: `languages/python.md` or `languages/rust.md` in this skill's directory. The card says where the config lives, what the guard reports, and which variant to read in each skill. When a skill says "read the variant", read `languages/<language>.md` in that skill's directory. For a language without a pack, apply the agnostic rules and say which checks are missing.
 
 ## Where the domain lives
 
@@ -39,7 +45,7 @@ skill loads. In Codex, apply this table after loading the superpowers skill.
 - `docs/language.md`: the documentation language (phase, plan, task, step, batch, round, fix wave, gate). Docs must match it.
 - `docs/domain/context-map.md`: bounded contexts and how they relate.
 - `docs/domain/decisions/`: ADRs for boundary and modelling decisions.
-- `[tool.domain-powers]` in `pyproject.toml`: tells the edit guard where the contexts are.
+- The domain-powers config table (`[tool.domain-powers]` in `pyproject.toml`, `[workspace.metadata.domain-powers]` in `Cargo.toml`): tells the edit guard where the contexts are.
 
 If these exist, read the glossary, the documentation language and the context map before naming anything.
 
@@ -51,17 +57,19 @@ Edit/Write calls and Codex native patches. In skills-only mode, run it manually.
 For Markdown edits, the guard flags words that the documentation language or
 glossary lists under **Avoid** (`TERM`). Use the canonical term.
 
-For Python edits, the guard checks for type escapes (`Any`, `cast`, bare
-`# type: ignore`), framework imports inside a domain layer, and imports that reach
-into another context's internals. When it reports a violation, fix the design.
-Do not suppress it. A suppression is legitimate only with an inline justification:
-`# domain-powers: allow <reason>`. The reviewer will judge that reason.
+For source edits, the guard checks for type escapes (`Any`, casts, suppressions,
+and the language's own escapes such as `unsafe` or `unwrap` in Rust), framework
+dependencies inside a domain layer, and dependencies that reach into another
+context's internals. The pack card lists the codes. When it reports a violation,
+fix the design. Do not suppress it. A suppression is legitimate only with an inline
+justification, `domain-powers: allow <reason>` in a comment on the same line. The
+reviewer will judge that reason.
 
 ## Red flags
 
 | Thought | Reality |
 |---|---|
 | "It's just CRUD, no domain here" | Ask what invariants the data has. If there are none, say so explicitly in the plan; usually there are. |
-| "I'll use `dict` for now and add types later" | Later never comes. Types are the design. |
+| "I'll use a map or a string for now and add types later" | Later never comes. Types are the design. |
 | "The guard is being pedantic" | The guard is the only part of the boundary that can't be rationalised. Change the code. |
 | "I'll name it what the framework calls it" | Name it what the glossary calls it. Add the term if it's missing. |
