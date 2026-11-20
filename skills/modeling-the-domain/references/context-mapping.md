@@ -9,7 +9,7 @@
 | **Customer–Supplier** | Upstream serves downstream's needs | Downstream can negotiate | Upstream publishes a versioned API module; downstream has contract tests against it |
 | **Conformist** | Downstream adopts upstream's model as-is | No leverage, model is acceptable | Downstream imports upstream's *public* API types directly; accept the coupling knowingly |
 | **Anti-Corruption Layer** | Downstream translates upstream into its own model | Legacy, third-party, or a model that would pollute yours | `<context>/infrastructure/acl/` with translators; upstream types never appear in `<context>/domain` |
-| **Open Host Service / Published Language** | Upstream offers a stable protocol for many consumers | Many downstreams | Explicit schema (JSON Schema, protobuf, pydantic models in `api/`) versioned independently of the domain |
+| **Open Host Service / Published Language** | Upstream offers a stable protocol for many consumers | Many downstreams | Explicit schema (JSON Schema, protobuf, or typed DTOs in the context's `api`) versioned independently of the domain |
 | **Separate Ways** | No integration | The cost of integrating exceeds the value | Nothing; record the decision |
 
 ## Default stance

@@ -6,7 +6,7 @@ from pathlib import Path
 from helpers import write_tree
 from legacy import LEGACY_TREE, SLICE_TREE, TARGET_TOML
 
-TOOLS = Path(__file__).resolve().parents[2] / "skills" / "assessing-domain-migration" / "tools"
+TOOLS = Path(__file__).resolve().parents[2] / "scripts" / "assess"
 
 
 def _run(cwd: Path, tool: Path, *args: str) -> subprocess.CompletedProcess[str]:

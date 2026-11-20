@@ -13,10 +13,11 @@ import sys
 
 DOCS = "domain-powers:defining-documentation-language"
 IMPLEMENTER_NOTE = (
-    "When you dispatch implementer subagents for Python domain/application tasks, add this "
-    "line to each task prompt: 'Before writing code, load domain-powers:type-driven-design, "
-    "domain-powers:modeling-aggregates and domain-powers:testing-invariants, and read "
-    "docs/language.md and docs/domain/glossary.md if they exist.' After each task's review, "
+    "When you dispatch implementer subagents for domain/application tasks, add this line to "
+    "each task prompt: 'Before writing code, load domain-powers:type-driven-design, "
+    "domain-powers:modeling-aggregates and domain-powers:testing-invariants, read each one's "
+    "languages/<language>.md variant for this project, and read docs/language.md and "
+    "docs/domain/glossary.md if they exist.' After each task's review, "
     "also dispatch the domain-powers:domain-reviewer agent with the same SHAs."
 )
 
@@ -30,8 +31,9 @@ PAIRINGS: dict[str, str] = {
         f"contracts before code) and {DOCS} (plan, task, step, batch, round per docs/language.md)."
     ),
     "test-driven-development": (
-        "For Python domain or application code, also load domain-powers:type-driven-design, "
-        "domain-powers:modeling-aggregates and domain-powers:testing-invariants."
+        "For domain or application code, also load domain-powers:type-driven-design, "
+        "domain-powers:modeling-aggregates and domain-powers:testing-invariants, and read "
+        "each one's languages/<language>.md variant."
     ),
     "subagent-driven-development": IMPLEMENTER_NOTE,
     "executing-plans": IMPLEMENTER_NOTE,
@@ -49,8 +51,8 @@ PAIRINGS: dict[str, str] = {
     ),
     "systematic-debugging": (
         "Once the root cause is found: if it was an invalid state, load "
-        "domain-powers:type-driven-design to make it unrepresentable; add the failing case as a "
-        "Hypothesis @example (domain-powers:testing-invariants)."
+        "domain-powers:type-driven-design to make it unrepresentable; keep the failing case as "
+        "a property-test regression example (domain-powers:testing-invariants)."
     ),
     "writing-skills": f"Also load {DOCS}: skills use the terms in docs/language.md.",
 }

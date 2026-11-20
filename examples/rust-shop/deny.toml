@@ -1,0 +1,18 @@
+# Gate 4: `cargo deny check bans`. `wrappers` lists the crates allowed to depend on a
+# denied crate directly; everything else is refused.
+
+[graph]
+all-features = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+  # This example has no infrastructure crates, so frameworks are banned outright. A real
+  # project lists the crates that hold its infrastructure as `wrappers` (see the template).
+  { crate = "sqlx" },
+  { crate = "reqwest" },
+  { crate = "tokio" },
+  { crate = "serde" },
+]
